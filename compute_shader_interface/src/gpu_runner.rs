@@ -250,8 +250,11 @@ pub async fn run_compute_shader(
 
     // Read the shader file at runtime
     let entry_point = "main_cs";
-    let path = "/Users/rowan/Projects-Code/qmlib/target/spirv-builder/spirv-unknown-spv1.3/release/deps/qmlib_compute_shader.spv";
-
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let spirv_target = env!("SPIRV_TARGET");
+    let spirv_crate = env!("SPIRV_CRATE");
+    let path = format!("{}/../target/spirv-builder/{}/release/deps/{}.spv", manifest_dir, spirv_target, spirv_crate);
+    println!("Loading SPIR-V file: {}", path);
     let mut file = File::open(path).expect("Failed to open SPIR-V file");
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
@@ -423,13 +426,10 @@ pub async fn run_compute_shader(
 
     queue.submit(Some(encoder.finish()));
 
-    // init data vec here
     let buffer_slice = readback_buffer.slice(..);
 
     buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
 
-    //change this to add code to the
-    //buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
     // NOTE(eddyb) `poll` should return only after the above callbacks fire
     // (see also https://github.com/gfx-rs/wgpu/pull/2698 for more details).
     device.poll(wgpu::Maintain::Wait);

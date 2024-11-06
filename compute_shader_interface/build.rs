@@ -4,6 +4,11 @@ use std::error::Error;
 use spirv_builder::SpirvBuilder;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let spirv_target = "spirv-unknown-spv1.3";
+    println!("cargo:rustc-env=SPIRV_TARGET={}", spirv_target);
+
+    let spirv_crate = "compute_shader";
+    println!("cargo:rustc-env=SPIRV_CRATE={}", spirv_crate);
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS")?;
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH")?;
@@ -35,9 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut builder_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
    //let path_to_crate = builder_dir.join(path_to_crate);
      builder_dir = builder_dir.parent().unwrap().join("compute_shader");
-    println!("{:?}", builder_dir);
 
-    let result = SpirvBuilder::new(builder_dir, "spirv-unknown-spv1.3")
+    let result = SpirvBuilder::new(builder_dir, spirv_target)
     //.capability(spirv_builder::Capability::AtomicFloat32AddEXT)
     //.extension("SPV_EXT_shader_atomic_float_add")
     .build()?;

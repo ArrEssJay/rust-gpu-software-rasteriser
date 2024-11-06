@@ -124,7 +124,6 @@ pub fn main_cs(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
 ) {
     // rasterise the cell for this thread
-    //gen_raster_debug_dump_inputs(
     rasterise_cell(
         params,
         u_buffer,
@@ -179,10 +178,10 @@ pub fn rasterise_cell(
                         v[1].xy().as_ivec2(),
                         v[2].xy().as_ivec2(),
                     ];
-                    // // Compute the full area of the triangle
+                    // Compute the full area of the triangle
                     let area_full = edge_function(v_xy_i);
 
-                    // // Skip degenerate triangles
+                    // Skip degenerate triangles
                     if area_full == 0 {
                         continue;
                     }
@@ -208,69 +207,6 @@ pub fn rasterise_cell(
         }
     }
 }
-
-// single thread at 0,0,0 -dump inputs into output buffer
-// fn gen_raster_debug_dump_inputs(
-//     params: &RasterParameters,
-//     u_buffer: &[u32],
-//     v_buffer: &[u32],
-//     h_buffer: &[u32],
-//     i_buffer: &[u32],
-//     bounding_boxes: &[UVec4],
-//     storage: &mut [f32],
-//     global_id: UVec3,
-// ) {
-//     // workgroup size is 1x1x1,
-
-//     if global_id.x == 0 && global_id.y == 0 && global_id.z == 0 {
-//         let mut raster_idx: u32 = 0;
-//         storage[raster_idx as usize] = params.raster_dim_size as f32;
-//         raster_idx += 1;
-//         storage[raster_idx as usize] = params.vertex_count as f32;
-//         raster_idx += 1;
-
-//         for index in 0..params.vertex_count {
-//             storage[raster_idx as usize] = u_buffer[index as usize] as f32;
-//             raster_idx += 1;
-//         }
-//         storage[raster_idx as usize] = params.vertex_count as f32;
-//         raster_idx += 1;
-
-//         for index in 0..params.vertex_count {
-//             storage[raster_idx as usize] = v_buffer[index as usize] as f32;
-//             raster_idx += 1;
-//         }
-//         storage[raster_idx as usize] = params.vertex_count as f32;
-//         raster_idx += 1;
-
-//         for index in 0..params.vertex_count {
-//             storage[raster_idx as usize] = h_buffer[index as usize] as f32;
-//             raster_idx += 1;
-//         }
-//         storage[raster_idx as usize] = params.triangle_count as f32;
-//         raster_idx += 1;
-
-//         for index in 0..params.triangle_count * 3 {
-//             storage[raster_idx as usize] = i_buffer[index as usize] as f32;
-//             raster_idx += 1;
-//         }
-//         storage[raster_idx as usize] = params.triangle_count as f32;
-//         raster_idx += 1;
-//         for index in 0..params.triangle_count {
-//             storage[raster_idx as usize] = bounding_boxes[index as usize].x as f32;
-//             raster_idx += 1;
-//             storage[raster_idx as usize] = bounding_boxes[index as usize].y as f32;
-//             raster_idx += 1;
-//             storage[raster_idx as usize] = bounding_boxes[index as usize].z as f32;
-//             raster_idx += 1;
-//             storage[raster_idx as usize] = bounding_boxes[index as usize].w as f32;
-//             raster_idx += 1;
-
-//             raster_idx += 1;
-//         }
-//         storage[raster_idx as usize] = raster_idx as f32;
-//     }
-// }
 
 fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
     cell_aabb.min_x() <= cell.x + GRID_CELL_SIZE_U32
@@ -418,23 +354,25 @@ pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters)
 // using integer edge function weights. This avoids floating point precision issues.
 // Interpolate the z value using barycentric coordinates only if the point
 // is determined to be inside the triangle
-pub fn triangle_face_height_interpolator(
-    p: UVec2,
-    v: [UVec3; 3],
-    params: &RasterParameters,
-) -> Option<f32> {
-    if point_in_triangle(v, p) {
-        // Interpolate the z value using barycentric coordinates
-        // Ideally work in double precision and reduce for output
-        // As of now, f64 seems to be broken in rust-gpu
+// pub fn triangle_face_height_interpolator(
+//     p: UVec2,
+//     v: [UVec3; 3],
+//     params: &RasterParameters,
+// ) -> Option<f32> {
+//     if point_in_triangle(v, p) {
+//         // Interpolate the z value using barycentric coordinates
+//         // Ideally work in double precision and reduce for output
+//         // As of now, f64 seems to be broken in rust-gpu
 
-        // -- Error casting pointers in spirv compiler
-        interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), params)
-    } else {
-        None
-    }
-}
+//         // -- Error casting pointers in spirv compiler
+//         interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), params)
+//     } else {
+//         None
+//     }
+// }
 
+
+// These tests will be built and run for the host target only
 #[cfg(test)]
 
 mod tests {
@@ -642,10 +580,26 @@ mod tests {
         ];
         let params: RasterParameters = RasterParameters::new(100, 0., 1., 0, 0);
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 0.);
     }
+
+    #[test]
+    fn test_shader_edge_interpolator_inside_triangle_one_plane() {
+        let p = UVec2::new(1, 1);
+        let v = [
+            UVec3::new(0, 0, 32767),
+            UVec3::new(0, 127, 32767),
+            UVec3::new(127, 0, 32767),
+        ];
+        let params: RasterParameters = RasterParameters::new(128, 0., 1., 0, 0);
+
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
+        assert!(result.is_some());
+        assert_abs_diff_eq!(result.unwrap(), 1.0, epsilon = 1e-5);
+    }
+
 
     #[test]
     fn test_shader_edge_interpolator_inside_triangle_different_z() {
@@ -658,7 +612,7 @@ mod tests {
             UVec3::new(3, 0, 16383),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_abs_diff_eq!(result.unwrap(), 0.5, epsilon = 1e-5);
     }
@@ -674,7 +628,7 @@ mod tests {
             UVec3::new(2, 0, 16383),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_abs_diff_eq!(result.unwrap(), 0.75, epsilon = 1e-5);
     }
@@ -690,7 +644,7 @@ mod tests {
             UVec3::new(0, 2, 32767),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_none());
     }
 
@@ -705,7 +659,7 @@ mod tests {
             UVec3::new(2, 0, 16383),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 0.);
     }
@@ -721,7 +675,7 @@ mod tests {
             UVec3::new(0, 2, 32767),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 0.5);
     }
@@ -737,7 +691,7 @@ mod tests {
             UVec3::new(0, 2, 32767),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), 0.);
     }
@@ -753,7 +707,7 @@ mod tests {
             UVec3::new(0, 0, 32767),
         ];
 
-        let result = triangle_face_height_interpolator(p, v, &params);
+        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_none());
     }
 }

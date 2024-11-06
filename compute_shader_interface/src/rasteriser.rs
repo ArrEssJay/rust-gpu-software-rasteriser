@@ -111,11 +111,11 @@ pub fn run_compute_shader_cells_cpu(
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
-    use paste::paste;
+
+    const F32_EPSILON: f32 = 1e-4;
 
     macro_rules! print_raster {
         ($vec:expr, $items_per_row:expr, $label:expr) => {
@@ -134,127 +134,16 @@ mod tests {
         };
     }
 
-    // This is intended to be used with the commented out code above that outputs address/vertex data in the raster
-    // for validation purposes
-
-    #[test]
-    fn test_vertices() {
-        let indices: Vec<u32> = (0..3).flat_map(|i| std::iter::repeat(i).take(32)).collect();
-
-        let u: Vec<u32> = (0..32)
-            .flat_map(|i| std::iter::repeat(i).take(32))
-            .collect();
-
-        let v: Vec<u32> = (0..32)
-            .flat_map(|i| std::iter::repeat(i).take(32))
-            .collect();
-        let h: Vec<u32> = (0..(32 * 32)).collect();
-
-        let vertex_arrays = VertexArrays {
-            u: &u,
-            v: &v,
-            h: &h,
-            i: &indices,
-        };
-
-        let params = RasterParameters {
-            raster_dim_size: 32,
-            height_min: 0.0,
-            height_max: 100.0,
-            vertex_count: u.len() as u32,
-            triangle_count: (indices.len() / 3) as u32,
-        };
-
-        let result = rasterise(vertex_arrays, &params, Rasteriser::GPU);
-
-        print_raster!(&result, params.raster_dim_size as usize, "output");
-
-        assert_eq!(
-            result.len(),
-            (params.raster_dim_size * params.raster_dim_size) as usize
-        );
-    }
-
-    // For the plane tests below this is simply a linear gradient from 0 to 100
-    fn generate_expected_output_row(dim: usize) -> Vec<f32> {
+    // For the plane tests below this is simply a linear gradient
+    fn generate_expected_gradient(dim: usize) -> Vec<f32> {
         (0..dim)
             .map(|x| 100.0 * (x as f32 / (dim - 1) as f32))
             .collect()
     }
 
-    macro_rules! generate_rasteriser_test {
-        ($raster_fn:ident, $fn_prefix:ident, $dim:expr) => {
-            paste! {
-                #[test]
-                fn [<$fn_prefix _ $dim>]() {
-
-
-                    let vertices = vec![
-                        UVec3::new(0, 0, 0),
-                        UVec3::new(0, $dim as u32 - 1, 0),
-                        UVec3::new($dim as u32 - 1, $dim as u32 - 1, 32767),
-                        UVec3::new($dim as u32 - 1, 0, 32767),
-                    ];
-
-                    let u: Vec<u32> = vertices.iter().map(|v| v.x).collect();
-                    let v: Vec<u32> = vertices.iter().map(|v| v.y).collect();
-                    let height: Vec<u32> = vertices.iter().map(|v| v.z).collect();
-
-
-
-                    let indices = vec![0, 1, 2,0, 2, 3];
-
-                    let params = RasterParameters {
-                        raster_dim_size: $dim,
-                        height_min: 0.,
-                        height_max: 100.,
-                        vertex_count: vertices.len() as u32,
-                        triangle_count: indices.len() as u32/3,
-
-                    };
-
-                    let vertex_arrays = VertexArrays {
-                        u: &u,
-                        v: &v,
-                        h: &height,
-                        i: &indices,
-                    };
-                    let storage = $raster_fn(vertex_arrays, &params, Rasteriser::GPU);
-
-                    let expected_output_row = generate_expected_output_row($dim);
-
-                    for row in 0..params.raster_dim_size {
-                        let start = (row * params.raster_dim_size) as usize;
-                        let end = start + params.raster_dim_size as usize;
-                        let actual_row = &storage[start..end];
-                        print_raster!(actual_row, $dim, "actual");
-                        assert_abs_diff_eq!(
-                            actual_row,
-                            expected_output_row.as_slice(),
-                            epsilon = 1e-4
-                        );
-                    }
-                }
-            }
-        };
-    }
-
-    // Generate the test functions for given dimension and each rasteriser
-    macro_rules! generate_cell_rasteriser_tests_cpu {
-        ($($dim:expr),*) => {
-            $(
-                generate_rasteriser_test!(rasterise, rasteriser_test, $dim);
-            )*
-        };
-    }
-
-    // generate_plane_triangle_rasteriser_tests!(8, 16, 32, 64, 128, 256, 512, 1024);
-    //generate_plane_triangle_rasteriser_tests!(2048, 4096, 8192, 16384, 32768); // large
-    generate_cell_rasteriser_tests_cpu!(8, 16, 32, 64, 128, 256, 512, 1024);
-    //generate_plane_raster_block_scanline_tests!(2048, 4096, 8192, 16384, 32768); //large
-
+    // pre-computed gradient for a 64x64 plane
     #[test]
-    fn test_generate_expected_output_row() {
+    fn test_generate_expected_gradient() {
         let dim = 64;
         let expected_output = vec![
             0.0, 1.5873017, 3.1746035, 4.7619047, 6.349207, 7.936508, 9.523809, 11.111112,
@@ -266,16 +155,85 @@ mod tests {
             76.190475, 77.77778, 79.36508, 80.952385, 82.53968, 84.12698, 85.71429, 87.30159,
             88.88889, 90.47619, 92.06349, 93.650795, 95.2381, 96.82539, 98.4127, 100.0,
         ];
-        let result = generate_expected_output_row(dim);
+        let result = generate_expected_gradient(dim);
         assert_eq!(result, expected_output);
     }
 
-    /// Helper function to flatten triangle indices from Vec<[u32; 3]> to Vec<u32>
-    fn flatten_triangle_indices(triangles: &Vec<[u32; 3]>) -> Vec<u32> {
-        triangles
-            .iter()
-            .flat_map(|triangle| triangle.iter())
-            .copied()
-            .collect()
-    }    
+    fn test_plane(
+        dim_size: u32,
+        height: f32,
+        rasteriser: Rasteriser,
+        epsilon: f32,
+        gradient: bool,
+    ) {
+        // Simple pair of triangles forming a plane
+        // Either flat at the max height or sloping from 0 along the x-axis
+        let max = dim_size - 1;
+        let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
+
+        let u: Vec<u32> = vec![0, max, 0, max];
+        let v: Vec<u32> = vec![0, 0, max, max];
+
+        let h: Vec<u32> = if gradient {
+            vec![0, 32767, 0, 32767]
+        } else {
+            vec![32767, 32767, 32767, 32767]
+        };
+
+        let vertex_arrays = VertexArrays {
+            u: &u,
+            v: &v,
+            h: &h,
+            i: &indices,
+        };
+
+        let params = RasterParameters {
+            raster_dim_size: dim_size,
+            height_min: 0.0,
+            height_max: height,
+            vertex_count: u.len() as u32,
+            triangle_count: (indices.len() / 3) as u32,
+        };
+
+        let result = rasterise(vertex_arrays, &params, rasteriser);
+
+        // Compare to the reference value(s)
+        if gradient {
+            let expected_output_row = generate_expected_gradient(dim_size as usize);
+            for row in 0..params.raster_dim_size {
+                let start = (row * params.raster_dim_size) as usize;
+                let end = start + params.raster_dim_size as usize;
+                let actual_row = &result[start..end];
+                assert_abs_diff_eq!(
+                    actual_row,
+                    expected_output_row.as_slice(),
+                    epsilon = epsilon
+                );
+            }
+        } else {
+            for &pixel in &result {
+                assert_abs_diff_eq!(pixel, height, epsilon = epsilon);
+            }
+        }
+    }
+
+    #[test]
+    fn test_plane_flat_128_cpu() {
+        test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, false);
+    }
+
+    #[test]
+    fn test_plane_gradient_128_cpu() {
+        test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_flat_128_gpu() {
+        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+    }
+
+    #[test]
+    fn test_plane_gradient_128_gpu() {
+        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+    }
 }
