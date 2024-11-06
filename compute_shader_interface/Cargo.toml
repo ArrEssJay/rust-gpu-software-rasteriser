@@ -1,0 +1,44 @@
+[package]
+name = "compute_shader_interface"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"  # Ensure this line is present
+
+[lib]
+name = "compute_shader_interface"
+path = "src/rasteriser.rs"
+crate-type = ["dylib"]
+
+
+
+[dependencies]
+compute_shader = { path = "../compute_shader", version = "=0.1.0"}
+spirv-builder = { path = "../../rust-gpu/crates/spirv-builder", version = "=0.9.0", default-features = false }
+spirv-std = { path = "../../rust-gpu/crates/spirv-std", version = "=0.9.0"  }
+spirv-std-types = { path = "../../rust-gpu/crates/spirv-std/shared", version = "=0.9.0" }
+spirv-std-macros = { path = "../../rust-gpu/crates/spirv-std/macros", version = "=0.9.0" }
+spirv-tools = { version = "0.10", default-features = false }
+rustc_codegen_spirv = { path = "../../rust-gpu/crates/rustc_codegen_spirv", version = "=0.9.0", default-features = false }
+rustc_codegen_spirv-types = { path = "../../rust-gpu/crates/rustc_codegen_spirv-types", version = "=0.9.0" }
+wgpu = { version = "22.1.0", features = ["spirv"] }
+bytemuck = "1.19.0"
+strum_macros = "0.26.4"
+clap = { version = "4.5.20", features = ["derive"] }
+strum = "0.26.3"
+glam = "0.29.0"
+futures = "0.3.31"
+async-std = "1.13.0"
+zerocopy = { version = "0.8.8", features = ["derive"] }
+
+[build-dependencies]
+spirv-builder = { path = "../../rust-gpu/crates/spirv-builder", version = "=0.9.0",features = ["watch"] }
+
+[features]
+default = ["use-compiled-tools"]
+use-installed-tools = ["spirv-builder/use-installed-tools"]
+use-compiled-tools = ["spirv-builder/use-compiled-tools"]
+
+[dev-dependencies]
+approx = "0.5.1"
+async-std = { version = "1.13.0", features = ["attributes"] }
+paste = "1.0.15"

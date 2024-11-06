@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "compute_shader",
+    "compute_shader_interface"
+]
+
+[profile.release]
+# Optional: Optimize for release builds
+lto = true  # Link Time Optimization
+opt-level = 3 
+
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
+
+[profile.dev.build-override]
+opt-level = 3
