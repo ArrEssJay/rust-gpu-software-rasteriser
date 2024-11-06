@@ -3,7 +3,11 @@
 This is an experimental Compute Shader Rasteriser written in Rust using rust-gpu.
 It is principally a Proof-Of-Concept/learning exercise. It is likely not directly suitable for use in your project.
 
-For certain applications, the GPU render pipeline is not appropriate, such as for analytical applications. Whether DX, GL-ES, Vulkan, Metal...  there is no guarantee of pixel-perfect consistency between implementations.
+For certain applications, the GPU render pipeline is not appropriate, such as for analytical applications. Whether DX, GL-ES, Vulkan, Metal...  there is no guarantee of pixel-perfect consistency between implementations. By implementing our our rasteriser for the GPU we can guarantee that the output will be the same regardless of the target on which the data is rendered.
+
+Using rust-gpu, the shader itself is written in `no-std` rust, which can be compiled both to spir-v bytecode and for a CPU target.
+
+`wgpu` is used to provide an O/S and graphics API abstraction layer when executing on GPU.
 
 The rasteriser itself is specifically targeted at closed, trianglulated meshes. At present, it has been tested with quantized-mesh terrain data.
 
