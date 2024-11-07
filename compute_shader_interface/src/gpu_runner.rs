@@ -1,19 +1,25 @@
+use bytemuck::{Pod, Zeroable};
 use glam::UVec4;
 use std::fs::File;
 use std::io::Read;
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, Features};
-use zerocopy::{Immutable, IntoBytes};
+//use zerocopy::{Immutable, IntoBytes};
 
 use crate::VertexArrays;
 use compute_shader::RasterParameters;
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 
-// This replicates the glam UVec4 type
-// This is simply for simplicty and clarity
-// of serializing/deserializing
+// Local defition of the glam UVec4 struct
+// Glam does not implement the IntoBytes trait
+// This negates manual implementation of the
+// serialisation logic for the glam UVec4 struct
+// This is a bit of a hack. The newtype approach
+// etc. would be more idiomatic but did not
+// work with the rust-gpu tooling at the time
+// of writing
 #[repr(C)]
-#[derive(IntoBytes, Immutable)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct BufferUVec4 {
     pub x: u32,
     pub y: u32,
@@ -181,20 +187,22 @@ pub async fn run_compute_shader(
     let output_raster_size_bytes = (params.raster_dim_size as u64 * params.raster_dim_size as u64)
         * std::mem::size_of::<f32>() as u64;
 
-    // bounding boxes for triangles
-    // cast to an identical struct that implements IntoBytes
-    let aabb_serialisable = bounding_boxes
+   
+    // Input Data Buffers
+    let params_bytes =  bytemuck::bytes_of(params);
+    let u_bytes = bytemuck::cast_slice(v.u);
+    let v_bytes = bytemuck::cast_slice(v.v);
+    let h_bytes = bytemuck::cast_slice(v.h);
+    let indices_bytes =bytemuck::cast_slice(v.i);
+
+    // Serialise Bounding Boxes
+    // Cast to an identical struct that implements IntoBytes
+    let aabb_serialisable: Vec<BufferUVec4> = bounding_boxes
         .iter()
         .map(|&a| BufferUVec4::from_uvec4(a))
         .collect::<Vec<_>>();
 
-    // Input Data Buffers
-    let params_bytes = params.as_bytes();
-    let u_bytes = v.u.as_bytes();
-    let v_bytes = v.v.as_bytes();
-    let h_bytes = v.h.as_bytes();
-    let indices_bytes = v.i.as_bytes();
-    let aabb_bytes = aabb_serialisable.as_bytes();
+    let aabb_bytes: &[u8]  = bytemuck::cast_slice(&aabb_serialisable);
 
     // Create buffers
     let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

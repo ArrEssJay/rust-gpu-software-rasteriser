@@ -6,15 +6,19 @@ use spirv_std::{
     glam::{IVec2, UVec2, UVec3, UVec4, Vec2, Vec3, Vec3Swizzles},
     spirv,
 };
-//use compute_shader_shared::RasterParameters;
+
+// Importing from external crates is problematic due
+// to the spir-v compiler. Hence we define some of the
+// constants and structures here, despite this not
+// necessarily being the best practice
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 pub const GRID_CELL_SIZE: usize = 8;
 
-use zerocopy::Immutable;
-use zerocopy::IntoBytes;
+// #[cfg(not(target_arch = "spirv"))]
+use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
-#[derive(IntoBytes, Immutable, Debug)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct RasterParameters {
     pub raster_dim_size: u32,
     pub height_min: f32,
@@ -41,9 +45,6 @@ impl RasterParameters {
     }
 }
 
-// use compute_shader_shared::{
-//    VertexArrays, cell_pixel_x_y_to_index, cell_to_index, AABBValues, RasterParameters, AABB, GRID_CELL_SIZE
-// };
 
 // The spir-v compiler is very picky about how we extend/wrap
 // types in external crates. traits on a type alias is the only way
@@ -74,6 +75,16 @@ impl AABBValues for UVec4 {
         self.w
     }
 }
+
+
+// For a given bounding box and cell, check if the cell intersects the bounding box
+fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
+    cell_aabb.min_x() <= cell.x + GRID_CELL_SIZE_U32
+        && cell_aabb.max_x() >= cell.x
+        && cell_aabb.min_y() <= cell.y + GRID_CELL_SIZE_U32
+        && cell_aabb.max_y() >= cell.y
+}
+
 
 // pixel xy, in cell to raster x,y
 pub fn cell_pixel_x_y_to_raster_xy(cell_pixel_x: u32, cell_pixel_y: u32, cell: UVec2) -> UVec2 {
@@ -106,11 +117,7 @@ pub fn cell_to_raster_index(cell: UVec2, params: &RasterParameters) -> usize {
     let pixel_y = cell.y * GRID_CELL_SIZE_U32;
     raster_x_y_to_raster_index(pixel_x, pixel_y, params)
 }
-/// end shared
 
-// u8 was not working
-//const CW_FLAG: u32 = 0b1; // Bit flag for clockwise winding order
-//const DEGENERATE_FLAG: u32 = 0b10; // Bit flag for degenerate triangles
 
 #[spirv(compute(threads(1, 1, 1)))]
 pub fn main_cs(
@@ -120,7 +127,7 @@ pub fn main_cs(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] v_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] h_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] indices: &[u32],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] bounding_boxes: &[UVec4],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] bounding_boxes: &[AABB],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
 ) {
     // rasterise the cell for this thread
@@ -142,7 +149,7 @@ pub fn rasterise_cell(
     v_buffer: &[u32],
     h_buffer: &[u32],
     i_buffer: &[u32],
-    bounding_boxes: &[UVec4],
+    bounding_boxes: &[AABB],
     storage: &mut [f32],
     global_id: UVec3,
 ) {
@@ -206,13 +213,6 @@ pub fn rasterise_cell(
             }
         }
     }
-}
-
-fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
-    cell_aabb.min_x() <= cell.x + GRID_CELL_SIZE_U32
-        && cell_aabb.max_x() >= cell.x
-        && cell_aabb.min_y() <= cell.y + GRID_CELL_SIZE_U32
-        && cell_aabb.max_y() >= cell.y
 }
 
 // Only needed on host

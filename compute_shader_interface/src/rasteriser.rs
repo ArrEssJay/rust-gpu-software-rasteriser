@@ -117,6 +117,7 @@ mod tests {
 
     const F32_EPSILON: f32 = 1e-4;
 
+    #[allow(unused_macros)]
     macro_rules! print_raster {
         ($vec:expr, $items_per_row:expr, $label:expr) => {
             println!("{}", $label);
