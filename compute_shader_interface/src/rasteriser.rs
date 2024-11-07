@@ -219,22 +219,72 @@ mod tests {
     }
 
     #[test]
-    fn test_plane_flat_128_cpu() {
+    fn test_plane_flat_64_cpu() {
         test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, false);
     }
 
     #[test]
-    fn test_plane_gradient_128_cpu() {
+    fn test_plane_flat_64_gpu() {
+        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+    }
+
+    #[test]
+    fn test_plane_gradient_64_cpu() {
         test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
-
     #[test]
-    fn test_plane_flat_128_gpu() {
-        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+    fn test_plane_gradient_64_gpu() {
+        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 
     #[test]
-    fn test_plane_gradient_128_gpu() {
-        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+    fn test_plane_gradient_1024_cpu() {
+        test_plane(1024, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_1024_gpu() {
+        test_plane(1024, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+    }
+
+
+    #[test]
+    fn test_plane_gradient_4096_cpu() {
+        test_plane(4096, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_4096_gpu() {
+        test_plane(4096, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_8192_cpu() {
+        test_plane(8192, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_8192_gpu() {
+        test_plane(8192, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_16384_cpu() {
+        test_plane(16384, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_16384_gpu() {
+        test_plane(16384, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_32768_cpu() {
+        test_plane(32768, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_32768_gpu() {
+        test_plane(32768, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 }

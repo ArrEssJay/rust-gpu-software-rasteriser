@@ -2,14 +2,12 @@
 name = "compute_shader_interface"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"  # Ensure this line is present
+build = "build.rs"
 
 [lib]
 name = "compute_shader_interface"
 path = "src/rasteriser.rs"
 crate-type = ["dylib"]
-
-
 
 [dependencies]
 compute_shader = { path = "../compute_shader", version = "=0.1.0"}
@@ -22,13 +20,10 @@ rustc_codegen_spirv = { path = "../../rust-gpu/crates/rustc_codegen_spirv", vers
 rustc_codegen_spirv-types = { path = "../../rust-gpu/crates/rustc_codegen_spirv-types", version = "=0.9.0" }
 wgpu = { version = "22.1.0", features = ["spirv"] }
 bytemuck = "1.19.0"
-strum_macros = "0.26.4"
-clap = { version = "4.5.20", features = ["derive"] }
-strum = "0.26.3"
 glam = "0.29.0"
 futures = "0.3.31"
 async-std = "1.13.0"
-zerocopy = { version = "0.8.8", features = ["derive"] }
+tiff = "0.9.1"
 
 [build-dependencies]
 spirv-builder = { path = "../../rust-gpu/crates/spirv-builder", version = "=0.9.0",features = ["watch"] }

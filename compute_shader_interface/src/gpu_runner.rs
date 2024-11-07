@@ -3,7 +3,7 @@ use glam::UVec4;
 use std::fs::File;
 use std::io::Read;
 use wgpu::util::DeviceExt;
-use wgpu::{Adapter, Features};
+use wgpu::{Adapter, Features,Limits};
 //use zerocopy::{Immutable, IntoBytes};
 
 use crate::VertexArrays;
@@ -57,97 +57,6 @@ fn print_gpu_capabilities(adapter: &Adapter) {
             println!("  {:?}", feature);
         }
     }
-
-    // Print supported limits
-    let limits = adapter.limits();
-    println!("Supported Limits:");
-    println!(
-        "  Max Texture Dimension 1D: {}",
-        limits.max_texture_dimension_1d
-    );
-    println!(
-        "  Max Texture Dimension 2D: {}",
-        limits.max_texture_dimension_2d
-    );
-    println!(
-        "  Max Texture Dimension 3D: {}",
-        limits.max_texture_dimension_3d
-    );
-    println!(
-        "  Max Texture Array Layers: {}",
-        limits.max_texture_array_layers
-    );
-    println!("  Max Bind Groups: {}", limits.max_bind_groups);
-    println!(
-        "  Max Dynamic Uniform Buffers Per Pipeline Layout: {}",
-        limits.max_dynamic_uniform_buffers_per_pipeline_layout
-    );
-    println!(
-        "  Max Dynamic Storage Buffers Per Pipeline Layout: {}",
-        limits.max_dynamic_storage_buffers_per_pipeline_layout
-    );
-    println!(
-        "  Max Sampled Textures Per Shader Stage: {}",
-        limits.max_sampled_textures_per_shader_stage
-    );
-    println!(
-        "  Max Samplers Per Shader Stage: {}",
-        limits.max_samplers_per_shader_stage
-    );
-    println!(
-        "  Max Storage Buffers Per Shader Stage: {}",
-        limits.max_storage_buffers_per_shader_stage
-    );
-    println!(
-        "  Max Storage Textures Per Shader Stage: {}",
-        limits.max_storage_textures_per_shader_stage
-    );
-    println!(
-        "  Max Uniform Buffers Per Shader Stage: {}",
-        limits.max_uniform_buffers_per_shader_stage
-    );
-    println!(
-        "  Max Uniform Buffer Binding Size: {}",
-        limits.max_uniform_buffer_binding_size
-    );
-    println!(
-        "  Max Storage Buffer Binding Size: {}",
-        limits.max_storage_buffer_binding_size
-    );
-    println!("  Max Vertex Buffers: {}", limits.max_vertex_buffers);
-    println!("  Max Vertex Attributes: {}", limits.max_vertex_attributes);
-    println!(
-        "  Max Vertex Buffer Array Stride: {}",
-        limits.max_vertex_buffer_array_stride
-    );
-    println!(
-        "  Max Inter-Stage Shader Components: {}",
-        limits.max_inter_stage_shader_components
-    );
-    println!(
-        "  Max Compute Workgroup Storage Size: {}",
-        limits.max_compute_workgroup_storage_size
-    );
-    println!(
-        "  Max Compute Invocations Per Workgroup: {}",
-        limits.max_compute_invocations_per_workgroup
-    );
-    println!(
-        "  Max Compute Workgroup Size X: {}",
-        limits.max_compute_workgroup_size_x
-    );
-    println!(
-        "  Max Compute Workgroup Size Y: {}",
-        limits.max_compute_workgroup_size_y
-    );
-    println!(
-        "  Max Compute Workgroup Size Z: {}",
-        limits.max_compute_workgroup_size_z
-    );
-    println!(
-        "  Max Compute Workgroups Per Dimension: {}",
-        limits.max_compute_workgroups_per_dimension
-    );
 }
 
 pub async fn run_compute_shader(
@@ -168,12 +77,40 @@ pub async fn run_compute_shader(
 
     print_gpu_capabilities(&adapter);
 
+    // Check default limits and increase where needed
+    let default_limits = Limits::downlevel_defaults();
+    let adapter_limits = adapter.limits();
+
+    // Storage buffer determines the maximum size of the output raster
+    // If we want to rasterise a large area, we need to either increase
+    // this limit or use multiple buffers
+    
+    let max_storage_buffer_size = adapter_limits.max_storage_buffer_binding_size;
+    let max_storage_buffers_per_shader_stage = adapter_limits.max_storage_buffers_per_shader_stage;
+    let max_buffer_size = adapter_limits.max_buffer_size;
+
+    let custom_limits = Limits {
+        max_storage_buffer_binding_size: max_storage_buffer_size,
+        max_storage_buffers_per_shader_stage: max_storage_buffers_per_shader_stage,
+        max_buffer_size: max_buffer_size,
+        ..default_limits
+    };
+
+    println!("\nDefault limits:");
+    println!("{:?}", default_limits);
+    println!("\nSetting custom limits:");
+    println!("max_storage_buffer_binding_size = {}", max_storage_buffer_size);
+    println!("max_storage_buffers_per_shader_stage = {}", max_storage_buffers_per_shader_stage);
+    println!("max_buffer_size = {}", max_buffer_size);
+
+
+
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
                 required_features: Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: custom_limits.clone(),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -186,6 +123,15 @@ pub async fn run_compute_shader(
     // Raster buffer
     let output_raster_size_bytes = (params.raster_dim_size as u64 * params.raster_dim_size as u64)
         * std::mem::size_of::<f32>() as u64;
+    
+    println!("Required storage buffer size: {} bytes", output_raster_size_bytes);
+    
+    // Check that this doesn't fall outside buffer size limit
+    
+    if output_raster_size_bytes > max_storage_buffer_size as u64 {
+        panic!("Output raster size exceeds device limits: {} > {}", output_raster_size_bytes, max_storage_buffer_size);
+    }
+    
 
    
     // Input Data Buffers
@@ -256,25 +202,22 @@ pub async fn run_compute_shader(
         mapped_at_creation: false,
     });
 
-    // Read the shader file at runtime
+    // Read the shader binary image
     let entry_point = "main_cs";
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let spirv_target = env!("SPIRV_TARGET");
     let spirv_crate = env!("SPIRV_CRATE");
     let path = format!("{}/../target/spirv-builder/{}/release/deps/{}.spv", manifest_dir, spirv_target, spirv_crate);
     println!("Loading SPIR-V file: {}", path);
-    let mut file = File::open(path).expect("Failed to open SPIR-V file");
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
+    let mut spirv_file = File::open(path).expect("Failed to open SPIR-V file");
+    let mut spirv_bytes = Vec::new();
+    spirv_file.read_to_end(&mut spirv_bytes)
         .expect("Failed to read SPIR-V file");
-
-    // Convert bytes to Vec<u32>
-    let spirv: Vec<u32> = bytemuck::cast_slice(&bytes).to_vec();
 
     let label = "Shader Module";
     let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
-        source: wgpu::ShaderSource::SpirV(spirv.into()),
+        source: wgpu::ShaderSource::SpirV( bytemuck::cast_slice(&spirv_bytes).to_vec().into()),
     });
 
     // bind group
@@ -411,8 +354,13 @@ pub async fn run_compute_shader(
 
     // Calculate the number of workgroups needed - symmetric about x and y
     let num_workgroups_x_y = params.raster_dim_size / GRID_CELL_SIZE_U32;
+    println!("No. Workgroups Dispatched: {} : ({}x{})", num_workgroups_x_y*num_workgroups_x_y, num_workgroups_x_y,num_workgroups_x_y);
 
-    println!("num_workgroups_x_y: {}", num_workgroups_x_y,);
+    // Unlikely to be an issue but check the number of workgroups is within device limits
+    if num_workgroups_x_y > custom_limits.max_compute_workgroups_per_dimension {
+        panic!("Number of workgroups exceeds device limits: {} > {}", num_workgroups_x_y, custom_limits.max_compute_workgroups_per_dimension);
+    }
+
 
     // Set up the compute pass
     // Scope to ensure compute pass is dropped before the buffer is mapped
