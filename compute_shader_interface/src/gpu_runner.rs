@@ -4,10 +4,10 @@ use std::fs::File;
 use std::io::Read;
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, Features,Limits};
-//use zerocopy::{Immutable, IntoBytes};
 
 use crate::VertexArrays;
 use compute_shader::RasterParameters;
+
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 
 // Local defition of the glam UVec4 struct
@@ -62,7 +62,7 @@ fn print_gpu_capabilities(adapter: &Adapter) {
 pub async fn run_compute_shader(
     v: VertexArrays<'_>,
     params: &RasterParameters,
-    bounding_boxes: &Vec<UVec4>,
+    bounding_boxes: &[UVec4],
 ) -> Vec<f32> {
     // device
     let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
@@ -91,8 +91,8 @@ pub async fn run_compute_shader(
 
     let custom_limits = Limits {
         max_storage_buffer_binding_size: max_storage_buffer_size,
-        max_storage_buffers_per_shader_stage: max_storage_buffers_per_shader_stage,
-        max_buffer_size: max_buffer_size,
+        max_storage_buffers_per_shader_stage,
+        max_buffer_size,
         ..default_limits
     };
 
@@ -345,7 +345,7 @@ pub async fn run_compute_shader(
         label: None,
         layout: Some(&pipeline_layout),
         module: &shader_module,
-        entry_point: &entry_point,
+        entry_point,
     });
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

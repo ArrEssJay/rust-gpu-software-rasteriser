@@ -118,7 +118,7 @@ pub fn cell_to_raster_index(cell: UVec2, params: &RasterParameters) -> usize {
     raster_x_y_to_raster_index(pixel_x, pixel_y, params)
 }
 
-
+#[allow(clippy::too_many_arguments)]
 #[spirv(compute(threads(1, 1, 1)))]
 pub fn main_cs(
     #[spirv(global_invocation_id)] global_id: UVec3,
@@ -143,6 +143,7 @@ pub fn main_cs(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn rasterise_cell(
     params: &RasterParameters,
     u_buffer: &[u32],

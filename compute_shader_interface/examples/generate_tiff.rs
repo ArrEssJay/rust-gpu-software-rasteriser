@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let file = File::create(output_path).expect("Failed to create output file");
     let mut tiff: TiffEncoder<File> = TiffEncoder::new(file).expect("Failed to create TiffEncoder");
     let image = tiff
-        .new_image_with_compression::<Gray32Float,Lzw>(dim_size.into(), dim_size.into(), Lzw)
+        .new_image_with_compression::<Gray32Float,Lzw>(dim_size, dim_size, Lzw)
         .unwrap();
     image.write_data(&raster)?;
     Ok(())

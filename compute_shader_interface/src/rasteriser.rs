@@ -26,13 +26,13 @@ pub fn rasterise(
     params: &RasterParameters,
     rasteriser: Rasteriser,
 ) -> Vec<f32> {
-    let bounding_boxes: Vec<UVec4> = generate_triangle_bounding_boxes(vertex_arrays, &params);
+    let bounding_boxes: Vec<UVec4> = generate_triangle_bounding_boxes(vertex_arrays, params);
 
     let result = if rasteriser == Rasteriser::CPU {
-        run_compute_shader_cells_cpu(vertex_arrays, &params, bounding_boxes.as_slice())
+        run_compute_shader_cells_cpu(vertex_arrays, params, bounding_boxes.as_slice())
     } else {
         async_std::task::block_on(async {
-            run_compute_shader(vertex_arrays, &params, &bounding_boxes).await
+            run_compute_shader(vertex_arrays, params, &bounding_boxes).await
         })
     };
     result
@@ -54,16 +54,16 @@ pub fn generate_triangle_bounding_boxes(
 
         let vertices = [
             UVec2::new(
-                vertex_arrays.u[vertex_indices[0] as usize],
-                vertex_arrays.v[vertex_indices[0] as usize],
+                vertex_arrays.u[vertex_indices[0]],
+                vertex_arrays.v[vertex_indices[0]],
             ),
             UVec2::new(
-                vertex_arrays.u[vertex_indices[1] as usize],
-                vertex_arrays.v[vertex_indices[1] as usize],
+                vertex_arrays.u[vertex_indices[1]],
+                vertex_arrays.v[vertex_indices[1]],
             ),
             UVec2::new(
-                vertex_arrays.u[vertex_indices[2] as usize],
-                vertex_arrays.v[vertex_indices[2] as usize],
+                vertex_arrays.u[vertex_indices[2]],
+                vertex_arrays.v[vertex_indices[2]],
             ),
         ];
 
@@ -101,7 +101,7 @@ pub fn run_compute_shader_cells_cpu(
                 vertex_arrays.v,
                 vertex_arrays.h,
                 vertex_arrays.i,
-                &bounding_boxes,
+                bounding_boxes,
                 storage.as_mut_slice(),
                 UVec3::new(x, y, 0),
             );
