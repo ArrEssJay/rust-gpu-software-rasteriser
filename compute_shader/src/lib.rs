@@ -149,7 +149,7 @@ pub fn rasterise_cell(
     u_buffer: &[u32],
     v_buffer: &[u32],
     h_buffer: &[u32],
-    i_buffer: &[u32],
+    indices: &[u32],
     bounding_boxes: &[AABB],
     storage: &mut [f32],
     global_id: UVec3,
@@ -163,7 +163,7 @@ pub fn rasterise_cell(
                 let aabb = &bounding_boxes[i];
                 if intersects_cell(aabb, cell) {
                     let triangle_indices =
-                        [i_buffer[i * 3], i_buffer[i * 3 + 1], i_buffer[i * 3 + 2]];
+                        [indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]];
                     let v = [
                         UVec3::new(
                             u_buffer[triangle_indices[0] as usize],
@@ -216,58 +216,6 @@ pub fn rasterise_cell(
     }
 }
 
-// Only needed on host
-// #[cfg(not(target_arch = "spirv"))]
-// pub fn rasterise_triangle(
-//     params: &RasterParameters,
-//     u_buffer: &[u32],
-//     v_buffer: &[u32],
-//     h_buffer: &[u32],
-//     indices: &[u32],
-//     storage: &mut [f32],
-//     index: usize,
-// ) {
-//     use compute_shader_shared::calculate_triangle_aabb;
-
-//     let triangle_indices: [usize; 3] = [indices[index * 3] as usize, indices[index * 3 + 1] as usize,  indices[index * 3 + 2] as usize];
-
-//         let vertices = [
-//                                     UVec3::new(
-//                                         u_buffer[triangle_indices[0] as usize],
-//                                         v_buffer[triangle_indices[0] as usize],
-//                                         h_buffer[triangle_indices[0] as usize],
-//                                     ),
-//                                     UVec3::new(
-//                                         u_buffer[triangle_indices[1] as usize],
-//                                         v_buffer[triangle_indices[1] as usize],
-//                                         h_buffer[triangle_indices[1] as usize],
-//                                     ),
-//                                     UVec3::new(
-//                                         u_buffer[triangle_indices[2] as usize],
-//                                         v_buffer[triangle_indices[2] as usize],
-//                                         h_buffer[triangle_indices[2] as usize],
-//                                     ),
-//                                 ];
-
-//     let aabb: AABB = calculate_triangle_aabb(&vertices, &triangle_indices);
-
-//     // invert the y axis line order
-//     for y in (aabb.min_y()..=aabb.max_y()).rev() {
-//         for x in aabb.min_x()..=aabb.max_x() {
-//             // index in the flat raster
-//             let raster_idx = ((y * params.raster_dim_size) + x) as usize;
-
-//             // Check if the raster cell is empty by reading the atomic value without locking
-//             if let Some(value) =
-//                 triangle_face_height_interpolator(UVec2::new(x, y), [vertices[0], vertices[1], vertices[2]], params)
-//             {
-//                 // this invites a race condition as multiple threads can write to the same cell though in
-//                 // theory they should be writing the same value
-//                 storage[raster_idx] = value;
-//             }
-//         }
-//     }
-// }
 
 // Is v2 inside the edge formed by v0 and v1
 pub fn edge_function(v: [IVec2; 3]) -> i32 {
@@ -350,27 +298,6 @@ pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters)
         params.height_min + normalized_height * (params.height_max - params.height_min);
     Some(mapped_height)
 }
-
-// Check if the point is inside the triangle (all weights must be non-negative)
-// using integer edge function weights. This avoids floating point precision issues.
-// Interpolate the z value using barycentric coordinates only if the point
-// is determined to be inside the triangle
-// pub fn triangle_face_height_interpolator(
-//     p: UVec2,
-//     v: [UVec3; 3],
-//     params: &RasterParameters,
-// ) -> Option<f32> {
-//     if point_in_triangle(v, p) {
-//         // Interpolate the z value using barycentric coordinates
-//         // Ideally work in double precision and reduce for output
-//         // As of now, f64 seems to be broken in rust-gpu
-
-//         // -- Error casting pointers in spirv compiler
-//         interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), params)
-//     } else {
-//         None
-//     }
-// }
 
 
 // These tests will be built and run for the host target only
