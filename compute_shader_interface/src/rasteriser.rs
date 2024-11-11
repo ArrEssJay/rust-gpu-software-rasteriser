@@ -1,11 +1,11 @@
-mod gpu_runner;
+pub mod wgpu_dispatcher;
+pub mod host_dispatcher;
 
 use compute_shader::RasterParameters;
-use compute_shader::GRID_CELL_SIZE_U32;
 use glam::UVec2;
-use glam::UVec3;
 use glam::UVec4;
-use gpu_runner::run_compute_shader;
+use host_dispatcher::execute_compute_shader_host;
+use wgpu_dispatcher::WgpuDispatcher;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -28,14 +28,15 @@ pub fn rasterise(
 ) -> Vec<f32> {
     let bounding_boxes: Vec<UVec4> = generate_triangle_bounding_boxes(vertex_arrays, params);
 
-    let result = if rasteriser == Rasteriser::CPU {
-        run_compute_shader_cells_cpu(vertex_arrays, params, bounding_boxes.as_slice())
+    
+    if rasteriser == Rasteriser::CPU {
+        execute_compute_shader_host(vertex_arrays, params, &bounding_boxes)
     } else {
         async_std::task::block_on(async {
-            run_compute_shader(vertex_arrays, params, &bounding_boxes).await
+            let mut dispatcher = WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, params, &bounding_boxes).await;
+            dispatcher.execute_compute_shader_wgpu().await
         })
-    };
-    result
+    }
 }
 
 pub fn generate_triangle_bounding_boxes(
@@ -82,33 +83,7 @@ pub fn calculate_triangle_aabb(v: &[UVec2]) -> UVec4 {
     UVec4::new(min.x, min.y, max.x, max.y)
 }
 
-pub fn run_compute_shader_cells_cpu(
-    vertex_arrays: VertexArrays,
-    params: &RasterParameters,
-    bounding_boxes: &[UVec4],
-) -> Vec<f32> {
-    use compute_shader::rasterise_cell;
 
-    let mut storage: Vec<f32> =
-        vec![-1.; (params.raster_dim_size * params.raster_dim_size) as usize];
-
-    let grid_size = params.raster_dim_size / GRID_CELL_SIZE_U32;
-    for y in 0..grid_size {
-        for x in 0..grid_size {
-            rasterise_cell(
-                params,
-                vertex_arrays.u,
-                vertex_arrays.v,
-                vertex_arrays.h,
-                vertex_arrays.i,
-                bounding_boxes,
-                storage.as_mut_slice(),
-                UVec3::new(x, y, 0),
-            );
-        }
-    }
-    storage
-}
 
 #[cfg(test)]
 mod tests {

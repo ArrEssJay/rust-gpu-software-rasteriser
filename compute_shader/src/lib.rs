@@ -1,8 +1,10 @@
 #![cfg_attr(target_arch = "spirv", no_std)]
 
+use bytemuck::{Pod, Zeroable};
 #[allow(unused_imports)] // Spir-v compiler will complain if we don't
 use spirv_std::num_traits::Float;
 use spirv_std::{
+    arch,
     glam::{IVec2, UVec2, UVec3, UVec4, Vec2, Vec3, Vec3Swizzles},
     spirv,
 };
@@ -14,8 +16,9 @@ use spirv_std::{
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 pub const GRID_CELL_SIZE: usize = 8;
 
-// #[cfg(not(target_arch = "spirv"))]
-use bytemuck::{Pod, Zeroable};
+// Shared memory for per-cell vertices
+pub const MAX_CELL_TRIANGLES: usize = 8;
+pub type CellData = [[UVec3; 3]; MAX_CELL_TRIANGLES];
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -44,7 +47,6 @@ impl RasterParameters {
         }
     }
 }
-
 
 // The spir-v compiler is very picky about how we extend/wrap
 // types in external crates. traits on a type alias is the only way
@@ -76,7 +78,6 @@ impl AABBValues for UVec4 {
     }
 }
 
-
 // For a given bounding box and cell, check if the cell intersects the bounding box
 fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
     cell_aabb.min_x() <= cell.x + GRID_CELL_SIZE_U32
@@ -84,7 +85,6 @@ fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
         && cell_aabb.min_y() <= cell.y + GRID_CELL_SIZE_U32
         && cell_aabb.max_y() >= cell.y
 }
-
 
 // pixel xy, in cell to raster x,y
 pub fn cell_pixel_x_y_to_raster_xy(cell_pixel_x: u32, cell_pixel_y: u32, cell: UVec2) -> UVec2 {
@@ -100,13 +100,17 @@ pub fn raster_x_y_to_raster_index(cell_x: u32, cell_y: u32, params: &RasterParam
 
 // pixel x,y in celll to raster index
 pub fn cell_pixel_x_y_to_raster_index(
-    cell_pixel_x: u32,
-    cell_pixel_y: u32,
+    pixel_x: u32,
+    pixel_y: u32,
     cell: UVec2,
     params: &RasterParameters,
 ) -> usize {
-    let pixel = cell_pixel_x_y_to_raster_xy(cell_pixel_x, cell_pixel_y, cell);
+    let pixel = cell_pixel_x_y_to_raster_xy(pixel_x, pixel_y, cell);
     raster_x_y_to_raster_index(pixel.x, pixel.y, params)
+}
+
+pub fn cell_pixel_to_raster_index(pixel: UVec2, cell: UVec2, params: &RasterParameters) -> usize {
+    cell_pixel_x_y_to_raster_index(pixel.x, pixel.y, cell, params)
 }
 
 // cell index to raster index (top left corner)
@@ -119,9 +123,10 @@ pub fn cell_to_raster_index(cell: UVec2, params: &RasterParameters) -> usize {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[spirv(compute(threads(1, 1, 1)))]
+#[spirv(compute(threads(8, 8, 1)))]
 pub fn main_cs(
-    #[spirv(global_invocation_id)] global_id: UVec3,
+    #[spirv(workgroup_id)] workgroup_id: UVec3,
+    #[spirv(local_invocation_id)] local_id: UVec3,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] params: &RasterParameters,
     #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] u_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] v_buffer: &[u32],
@@ -129,93 +134,126 @@ pub fn main_cs(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] indices: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] bounding_boxes: &[AABB],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
+    #[spirv(workgroup)] cell_data: &mut CellData,
 ) {
-    // rasterise the cell for this thread
-    rasterise_cell(
-        params,
-        u_buffer,
-        v_buffer,
-        h_buffer,
-        indices,
-        bounding_boxes,
-        storage,
-        global_id,
-    );
+    // Designate thread (0,0,0) to load data into shared memory
+    if local_id.x == 0 && local_id.y == 0 && local_id.z == 0 {
+        // Load the vertices for this cell into shared memory
+        load_cell_triangles(
+            u_buffer,
+            v_buffer,
+            h_buffer,
+            indices,
+            bounding_boxes,
+            workgroup_id.xy(),
+            cell_data,
+        );
+    }
+
+    // Wait here until the vertices are loaded into shared memory
+    unsafe {
+        arch::workgroup_memory_barrier_with_group_sync();
+    }
+
+    // rasterise the pixel and write to raster
+    // the raster write is done here to allow the software rasteriser to use the same
+    // code but handle parallelisation and safe access of shared memory
+    let raster_index =
+        cell_pixel_x_y_to_raster_index(local_id.x, local_id.y, workgroup_id.xy(), params);
+
+    // Will return an invalid value if the pixel is outside the cell
+    let val = rasterise_pixel(params, cell_data, workgroup_id.xy(), local_id.xy());
+    if val > params.height_min {
+        storage[raster_index] = val;
+    }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn rasterise_cell(
-    params: &RasterParameters,
+pub fn load_cell_triangles(
     u_buffer: &[u32],
     v_buffer: &[u32],
     h_buffer: &[u32],
     indices: &[u32],
     bounding_boxes: &[AABB],
-    storage: &mut [f32],
-    global_id: UVec3,
+    cell: UVec2,
+    cell_data: &mut CellData,
 ) {
-    let cell = global_id.xy();
-    // Iterate over each pixel in the cell
-    for y in (0..GRID_CELL_SIZE_U32).rev() {
-        for x in 0..GRID_CELL_SIZE_U32 {
-            // Iterate over the bounding boxes
-            for i in 0..bounding_boxes.len() {
-                let aabb = &bounding_boxes[i];
-                if intersects_cell(aabb, cell) {
-                    let triangle_indices =
-                        [indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]];
-                    let v = [
-                        UVec3::new(
-                            u_buffer[triangle_indices[0] as usize],
-                            v_buffer[triangle_indices[0] as usize],
-                            h_buffer[triangle_indices[0] as usize],
-                        ),
-                        UVec3::new(
-                            u_buffer[triangle_indices[1] as usize],
-                            v_buffer[triangle_indices[1] as usize],
-                            h_buffer[triangle_indices[1] as usize],
-                        ),
-                        UVec3::new(
-                            u_buffer[triangle_indices[2] as usize],
-                            v_buffer[triangle_indices[2] as usize],
-                            h_buffer[triangle_indices[2] as usize],
-                        ),
-                    ];
-                    let v_xy_i: [IVec2; 3] = [
-                        v[0].xy().as_ivec2(),
-                        v[1].xy().as_ivec2(),
-                        v[2].xy().as_ivec2(),
-                    ];
-                    // Compute the full area of the triangle
-                    let area_full = edge_function(v_xy_i);
-
-                    // Skip degenerate triangles
-                    if area_full == 0 {
-                        continue;
-                    }
-
-                    // // negative area implies clockwise winding order
-                    let is_cw = area_full < 0;
-
-                    // // is the point in the triangle?
-                    let p_raster_xy = cell_pixel_x_y_to_raster_xy(x, y, cell);
-                    let w = calculate_edge_weights(v_xy_i, p_raster_xy.as_ivec2(), is_cw);
-                    if w[0] >= 0 && w[1] >= 0 && w[2] >= 0 {
-                        let v_xyz_f: [Vec3; 3] = [v[0].as_vec3(), v[1].as_vec3(), v[2].as_vec3()];
-                        let p_raster_index =
-                            raster_x_y_to_raster_index(p_raster_xy.x, p_raster_xy.y, params);
-                        let height =
-                            interpolate_barycentric(v_xyz_f, p_raster_xy.as_vec2(), params)
-                                .unwrap();
-
-                        storage[p_raster_index] = height;
-                    }
-                }
-            }
+    for i in 0..bounding_boxes.len() {
+        if i >= MAX_CELL_TRIANGLES {
+            // We can't panic so just return with nothing rendered for this cell
+            // This lacks finesse but for this implementation it will suffice
+            return;
+        }
+        let aabb = &bounding_boxes[i];
+        if intersects_cell(aabb, cell) {
+            let triangle_indices = [indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]];
+            let v = [
+                UVec3::new(
+                    u_buffer[triangle_indices[0] as usize],
+                    v_buffer[triangle_indices[0] as usize],
+                    h_buffer[triangle_indices[0] as usize],
+                ),
+                UVec3::new(
+                    u_buffer[triangle_indices[1] as usize],
+                    v_buffer[triangle_indices[1] as usize],
+                    h_buffer[triangle_indices[1] as usize],
+                ),
+                UVec3::new(
+                    u_buffer[triangle_indices[2] as usize],
+                    v_buffer[triangle_indices[2] as usize],
+                    h_buffer[triangle_indices[2] as usize],
+                ),
+            ];
+            cell_data[i] = v;
+            //cell_data.triangle_count += 1;
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn rasterise_pixel(
+    raster_parameters: &RasterParameters,
+    cell_data: &CellData,
+    cell: UVec2,
+    pixel: UVec2,
+) -> f32 {
+    // Iterate over the shared memory to rasterise the pixel
+    // There are likely less than MAX_CELL_TRIANGLES triangles in the shared memory
+    // and we will break out of the loop once we find the triangle that contains the pixel
+
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..MAX_CELL_TRIANGLES {
+        let v = cell_data[i];
+
+        let v_xy_i: [IVec2; 3] = [
+            v[0].xy().as_ivec2(),
+            v[1].xy().as_ivec2(),
+            v[2].xy().as_ivec2(),
+        ];
+        // Compute the full area of the triangle
+        let area_full = edge_function(v_xy_i);
+
+        // Skip degenerate triangles
+        if area_full == 0 {
+            continue;
+        }
+
+        // Negative area implies clockwise winding order
+        let is_cw = area_full < 0;
+
+        // Check if the point is in the triangle
+        let p_raster_xy = cell_pixel_x_y_to_raster_xy(pixel.x, pixel.y, cell);
+        let w = calculate_edge_weights(v_xy_i, p_raster_xy.as_ivec2(), is_cw);
+
+        if w[0] >= 0 && w[1] >= 0 && w[2] >= 0 {
+            let v_xyz_f: [Vec3; 3] = [v[0].as_vec3(), v[1].as_vec3(), v[2].as_vec3()];
+            let height =
+                interpolate_barycentric(v_xyz_f, p_raster_xy.as_vec2(), raster_parameters).unwrap();
+            return height;
+        }
+    }
+    // If no triangle contains the pixel, return NAN
+    raster_parameters.height_min - 1.0
+}
 
 // Is v2 inside the edge formed by v0 and v1
 pub fn edge_function(v: [IVec2; 3]) -> i32 {
@@ -260,6 +298,7 @@ pub fn point_in_triangle(v: [UVec3; 3], p: UVec2) -> bool {
     }
 
     // Determine winding order
+    // Negative area implies clockwise winding order
     let is_cw = area_full < 0;
 
     // Calculate edge weights
@@ -299,10 +338,8 @@ pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters)
     Some(mapped_height)
 }
 
-
 // These tests will be built and run for the host target only
 #[cfg(test)]
-
 mod tests {
 
     use super::*;
@@ -527,7 +564,6 @@ mod tests {
         assert!(result.is_some());
         assert_abs_diff_eq!(result.unwrap(), 1.0, epsilon = 1e-5);
     }
-
 
     #[test]
     fn test_shader_edge_interpolator_inside_triangle_different_z() {

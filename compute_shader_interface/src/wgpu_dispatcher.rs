@@ -7,8 +7,7 @@ use wgpu::{Adapter, Features,Limits};
 
 use crate::VertexArrays;
 use compute_shader::RasterParameters;
-
-pub const GRID_CELL_SIZE_U32: u32 = 8;
+use compute_shader::GRID_CELL_SIZE_U32;
 
 // Local defition of the glam UVec4 struct
 // Glam does not implement the IntoBytes trait
@@ -19,7 +18,7 @@ pub const GRID_CELL_SIZE_U32: u32 = 8;
 // work with the rust-gpu tooling at the time
 // of writing
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct BufferUVec4 {
     pub x: u32,
     pub y: u32,
@@ -38,6 +37,7 @@ impl BufferUVec4 {
         }
     }
 }
+
 
 fn print_gpu_capabilities(adapter: &Adapter) {
     // Print adapter properties
@@ -59,82 +59,91 @@ fn print_gpu_capabilities(adapter: &Adapter) {
     }
 }
 
-pub async fn run_compute_shader(
-    v: VertexArrays<'_>,
+#[derive(Debug)]
+pub struct WgpuDispatcher {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+    storage_buffer: wgpu::Buffer,
+    readback_buffer: wgpu::Buffer,
+    output_raster_size_bytes: u64,
+    num_workgroups_x_y: u32,
+}
+
+impl WgpuDispatcher {
+    pub async fn setup_compute_shader_wgpu(v: VertexArrays<'_>,
     params: &RasterParameters,
-    bounding_boxes: &[UVec4],
-) -> Vec<f32> {
-    // device
-    let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
-        ..Default::default()
-    });
-    let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, None)
-        .await
-        .expect("Failed to find an appropriate adapter");
+    bounding_boxes: &[UVec4]) -> Self {
+      // device
+     let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
+     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+         backends,
+         dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
+         ..Default::default()
+     });
+     let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, None)
+         .await
+         .expect("Failed to find an appropriate adapter");
+ 
+     print_gpu_capabilities(&adapter);
+ 
+     // Check default limits and increase where needed
+     let default_limits = Limits::downlevel_defaults();
+     let adapter_limits = adapter.limits();
+ 
+     // Storage buffer determines the maximum size of the output raster
+     // If we want to rasterise a large area, we need to either increase
+     // this limit or use multiple buffers
+     
+     let max_storage_buffer_size = adapter_limits.max_storage_buffer_binding_size;
+     let max_storage_buffers_per_shader_stage = adapter_limits.max_storage_buffers_per_shader_stage;
+     let max_buffer_size = adapter_limits.max_buffer_size;
+ 
+     let custom_limits = Limits {
+         max_storage_buffer_binding_size: max_storage_buffer_size,
+         max_storage_buffers_per_shader_stage,
+         max_buffer_size,
+         ..default_limits
+     };
+ 
+     println!("\nDefault limits:");
+     println!("{:?}", default_limits);
+     println!("\nSetting custom limits:");
+     println!("max_storage_buffer_binding_size = {}", max_storage_buffer_size);
+     println!("max_storage_buffers_per_shader_stage = {}", max_storage_buffers_per_shader_stage);
+     println!("max_buffer_size = {}", max_buffer_size);
+ 
+ 
+ 
+     let (device, queue) = adapter
+         .request_device(
+             &wgpu::DeviceDescriptor {
+                 label: None,
+                 required_features: Features::empty(),
+                 required_limits: custom_limits.clone(),
+                 memory_hints: wgpu::MemoryHints::Performance,
+             },
+             None,
+         )
+         .await
+         .expect("Failed to create device");
+     drop(instance);
+     drop(adapter);
+ 
+     // Raster buffer
+     let output_raster_size_bytes = (params.raster_dim_size as u64 * params.raster_dim_size as u64)
+         * std::mem::size_of::<f32>() as u64;
+     
+     println!("Required storage buffer size: {} bytes", output_raster_size_bytes);
+     
+     // Check that this doesn't fall outside buffer size limit
+     
+     if output_raster_size_bytes > max_storage_buffer_size as u64 {
+         panic!("Output raster size exceeds device limits: {} > {}", output_raster_size_bytes, max_storage_buffer_size);
+     }
 
-    print_gpu_capabilities(&adapter);
-
-    // Check default limits and increase where needed
-    let default_limits = Limits::downlevel_defaults();
-    let adapter_limits = adapter.limits();
-
-    // Storage buffer determines the maximum size of the output raster
-    // If we want to rasterise a large area, we need to either increase
-    // this limit or use multiple buffers
-    
-    let max_storage_buffer_size = adapter_limits.max_storage_buffer_binding_size;
-    let max_storage_buffers_per_shader_stage = adapter_limits.max_storage_buffers_per_shader_stage;
-    let max_buffer_size = adapter_limits.max_buffer_size;
-
-    let custom_limits = Limits {
-        max_storage_buffer_binding_size: max_storage_buffer_size,
-        max_storage_buffers_per_shader_stage,
-        max_buffer_size,
-        ..default_limits
-    };
-
-    println!("\nDefault limits:");
-    println!("{:?}", default_limits);
-    println!("\nSetting custom limits:");
-    println!("max_storage_buffer_binding_size = {}", max_storage_buffer_size);
-    println!("max_storage_buffers_per_shader_stage = {}", max_storage_buffers_per_shader_stage);
-    println!("max_buffer_size = {}", max_buffer_size);
-
-
-
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: Features::empty(),
-                required_limits: custom_limits.clone(),
-                memory_hints: wgpu::MemoryHints::Performance,
-            },
-            None,
-        )
-        .await
-        .expect("Failed to create device");
-    drop(instance);
-    drop(adapter);
-
-    // Raster buffer
-    let output_raster_size_bytes = (params.raster_dim_size as u64 * params.raster_dim_size as u64)
-        * std::mem::size_of::<f32>() as u64;
-    
-    println!("Required storage buffer size: {} bytes", output_raster_size_bytes);
-    
-    // Check that this doesn't fall outside buffer size limit
-    
-    if output_raster_size_bytes > max_storage_buffer_size as u64 {
-        panic!("Output raster size exceeds device limits: {} > {}", output_raster_size_bytes, max_storage_buffer_size);
-    }
-    
-
-   
-    // Input Data Buffers
+      // Input Data Buffers
     let params_bytes =  bytemuck::bytes_of(params);
     let u_bytes = bytemuck::cast_slice(v.u);
     let v_bytes = bytemuck::cast_slice(v.v);
@@ -348,10 +357,7 @@ pub async fn run_compute_shader(
         entry_point,
     });
 
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("Command Encoder"),
-    });
-
+   
     // Calculate the number of workgroups needed - symmetric about x and y
     let num_workgroups_x_y = params.raster_dim_size / GRID_CELL_SIZE_U32;
     println!("No. Workgroups Dispatched: {} : ({}x{})", num_workgroups_x_y*num_workgroups_x_y, num_workgroups_x_y,num_workgroups_x_y);
@@ -361,42 +367,63 @@ pub async fn run_compute_shader(
         panic!("Number of workgroups exceeds device limits: {} > {}", num_workgroups_x_y, custom_limits.max_compute_workgroups_per_dimension);
     }
 
-
-    // Set up the compute pass
-    // Scope to ensure compute pass is dropped before the buffer is mapped
-    {
-        let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-        compute_pass.set_pipeline(&pipeline);
-        compute_pass.set_bind_group(0, &bind_group, &[]);
-
-        compute_pass.dispatch_workgroups(num_workgroups_x_y, num_workgroups_x_y, 1);
-    }
-    // Copy data from the storage buffer to the readback buffer
-    encoder.copy_buffer_to_buffer(
-        &storage_buffer,
-        0,
-        &readback_buffer,
-        0,
+    WgpuDispatcher {
+        device,
+        queue,
+        pipeline,
+        bind_group,
+        storage_buffer,
+        readback_buffer,
         output_raster_size_bytes,
-    );
+        num_workgroups_x_y,
+    }
+    }
 
-    queue.submit(Some(encoder.finish()));
+    pub async fn execute_compute_shader_wgpu(&mut self) -> Vec<f32> {
+    
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Command Encoder"),
+        });
+    
+        // Set up the compute pass
+        // Scope to ensure compute pass is dropped before the buffer is mapped
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&Default::default());
+            compute_pass.set_pipeline(&self.pipeline);
+            compute_pass.set_bind_group(0, &self.bind_group, &[]);
+    
+            compute_pass.dispatch_workgroups(self.num_workgroups_x_y, self.num_workgroups_x_y, 1);
+        }
+        // Copy data from the storage buffer to the readback buffer
+        encoder.copy_buffer_to_buffer(
+            &self.storage_buffer,
+            0,
+            &self.readback_buffer,
+            0,
+            self.output_raster_size_bytes,
+        );
+    
+        self.queue.submit(Some(encoder.finish()));
+    
+        let buffer_slice = self.readback_buffer.slice(..);
+    
+        buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
+    
+        // NOTE(eddyb) `poll` should return only after the above callbacks fire
+        // (see also https://github.com/gfx-rs/wgpu/pull/2698 for more details).
+        self.device.poll(wgpu::Maintain::Wait);
+    
+        let data = buffer_slice.get_mapped_range();
+        let result = data
+            .chunks_exact(4)
+            .map(|b| f32::from_ne_bytes(b.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        drop(data);
+        self.readback_buffer.unmap();
 
-    let buffer_slice = readback_buffer.slice(..);
-
-    buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
-
-    // NOTE(eddyb) `poll` should return only after the above callbacks fire
-    // (see also https://github.com/gfx-rs/wgpu/pull/2698 for more details).
-    device.poll(wgpu::Maintain::Wait);
-
-    let data = buffer_slice.get_mapped_range();
-    let result = data
-        .chunks_exact(4)
-        .map(|b| f32::from_ne_bytes(b.try_into().unwrap()))
-        .collect::<Vec<_>>();
-    drop(data);
-    readback_buffer.unmap();
-
-    result
+        result
+    }
+    
 }
+
+
