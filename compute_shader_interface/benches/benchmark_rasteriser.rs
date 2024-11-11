@@ -5,7 +5,7 @@ use compute_shader_interface::{
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use glam::UVec4;
 use wgpu_dispatcher::WgpuDispatcher;
-
+use async_std::task::block_on;
 
 async fn benchmark_rasteriser(c: &mut Criterion) {
     let dim_sizes = [64, 128, 256, 512, 1024, 2048, 4096];

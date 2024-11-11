@@ -281,8 +281,8 @@ pub fn calculate_edge_weights(v: [IVec2; 3], p: IVec2, is_cw: bool) -> [i32; 3] 
 // Uses orientation of 3 edges to determine if the point is inside the triangle
 pub fn point_in_triangle(v: [UVec3; 3], p: UVec2) -> bool {
     // Get the xy components of the vertices
-    //let v_xy = v.map(|v| v.xy().as_ivec2());
-    //RJ - cannot cast between pointer types -- spirv
+    // let v_xy = v.map(|v| v.xy().as_ivec2());
+    // RJ - cannot cast between pointer types -- spirv
     let v_xy: [IVec2; 3] = [
         v[0].xy().as_ivec2(),
         v[1].xy().as_ivec2(),

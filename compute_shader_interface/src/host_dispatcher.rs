@@ -1,7 +1,6 @@
 use rayon::prelude::*;
 use glam::{UVec2, UVec3};
 
-// Placeholder imports - replace with your actual modules
 use compute_shader::{
     cell_pixel_to_raster_index, load_cell_triangles, rasterise_pixel, CellData, RasterParameters, AABB, GRID_CELL_SIZE_U32, MAX_CELL_TRIANGLES
 };
@@ -19,18 +18,12 @@ pub fn execute_compute_shader_host(
     let storage = Mutex::new(vec![-1.0; raster_size]);
 
     let grid_size = params.raster_dim_size / GRID_CELL_SIZE_U32;
-    
+
     // Parallel iterate over cell rows
     (0..grid_size).into_par_iter().for_each(|cell_y| {
         for cell_x in 0..grid_size {
-            // Initialize shared indices for the current cell
-            // let mut cell_data = CellData {
-            //     triangle_count: 0,
-            //     triangle_vertices: &mut [[UVec3::ZERO; 3]; MAX_CELL_TRIANGLES],
-            // };
 
             let mut cell_data: CellData = [[UVec3::ZERO; 3]; MAX_CELL_TRIANGLES];
-            
             
             let cell = UVec2::new(cell_x, cell_y);
             // Load cell vertices (populate shared_indices)
@@ -43,7 +36,6 @@ pub fn execute_compute_shader_host(
                 cell,
                 &mut cell_data,
             );
-
 
             // Iterate over pixels within the 8x8 cell
             for yp in 0..GRID_CELL_SIZE_U32 {
