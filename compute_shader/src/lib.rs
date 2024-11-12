@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 use spirv_std::num_traits::Float;
 use spirv_std::{
     arch,
-    glam::{IVec2, UVec2, UVec3, UVec4, Vec2, Vec3, Vec3Swizzles},
+    glam::{IVec2, UVec2, UVec3, UVec4, Vec2, Vec3, Vec3Swizzles, Vec4Swizzles},
     spirv,
 };
 
@@ -58,6 +58,9 @@ pub trait AABBValues {
     fn min_y(&self) -> u32;
     fn max_x(&self) -> u32;
     fn max_y(&self) -> u32;
+
+    fn min(&self) -> UVec2;
+    fn max(&self) -> UVec2;
 }
 
 impl AABBValues for UVec4 {
@@ -75,6 +78,14 @@ impl AABBValues for UVec4 {
 
     fn max_y(&self) -> u32 {
         self.w
+    }
+
+    fn min(&self) -> UVec2 {
+        self.xy()
+    }
+
+    fn max(&self) -> UVec2 {
+        self.zw()
     }
 }
 
@@ -122,9 +133,62 @@ pub fn cell_to_raster_index(cell: UVec2, params: &RasterParameters) -> usize {
     raster_x_y_to_raster_index(pixel_x, pixel_y, params)
 }
 
+// Spir-v entry point for aabb calculation
+#[allow(clippy::too_many_arguments)]
+#[spirv(compute(threads(1)))]
+pub fn spirv_compute_aabb(
+    #[spirv(global_invocation_id)] global_id: UVec3,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] _params: &RasterParameters,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] u_buffer: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] v_buffer: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] _h_buffer: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] indices: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] aabb: &mut [AABB],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] _storage: &mut [f32],
+    #[spirv(workgroup)] _cell_data: &mut CellData,
+) {
+    //n-triangles x 1x1x1 workgroups will be dispatched
+    aabb[global_id.x as usize] = compute_aabb(global_id.x as usize, u_buffer, v_buffer, indices);
+}
+
+// Compute the axis aligned bounding box for a triangle
+pub fn compute_aabb(
+    triangle_index: usize,
+    u_buffer: &[u32],
+    v_buffer: &[u32],
+    indices: &[u32],
+) -> UVec4 {
+    // 3 vertices per triangle
+    let i0 = indices[triangle_index * 3] as usize;
+    let i1 = indices[triangle_index * 3 + 1] as usize;
+    let i2 = indices[triangle_index * 3 + 2] as usize;
+
+    #[cfg(not(target_arch = "spirv"))]
+    println!("i0: {}, i1: {}, i2: {}", i0, i1, i2);
+
+    // Extract x and y components of each point
+    let x0 = u_buffer[i0];
+    let y0 = v_buffer[i0];
+    let x1 = u_buffer[i1];
+    let y1 = v_buffer[i1];
+    let x2 = u_buffer[i2];
+    let y2 = v_buffer[i2];
+
+    // Compute min_x and max_x manually
+    // TODO: There is an issue with the glam uvec min/max function in spir-v
+    // requiring i8 support - needs investigation
+    let min_x = if x0 < x1 { if x0 < x2 { x0 } else { x2 } } else if x1 < x2 { x1 } else { x2 };
+    let max_x = if x0 > x1 { if x0 > x2 { x0 } else { x2 } } else if x1 > x2 { x1 } else { x2 };
+
+    let min_y = if y0 < y1 { if y0 < y2 { y0 } else { y2 } } else if y1 < y2 { y1 } else { y2 };
+    let max_y = if y0 > y1 { if y0 > y2 { y0 } else { y2 } } else if y1 > y2 { y1 } else { y2 };
+
+    UVec4::new(min_x, min_y, max_x, max_y)
+}
+
 #[allow(clippy::too_many_arguments)]
 #[spirv(compute(threads(8, 8, 1)))]
-pub fn main_cs(
+pub fn spirv_rasterise(
     #[spirv(workgroup_id)] workgroup_id: UVec3,
     #[spirv(local_invocation_id)] local_id: UVec3,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] params: &RasterParameters,
@@ -132,7 +196,9 @@ pub fn main_cs(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] v_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] h_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] indices: &[u32],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] bounding_boxes: &[AABB],
+    // aabb is mapped RW below simply to avoid the need to create a separate read only binding - it is not written to
+    // TODO: Either disable this validation or map R/O
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] aabb: &mut [AABB], 
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
     #[spirv(workgroup)] cell_data: &mut CellData,
 ) {
@@ -144,7 +210,7 @@ pub fn main_cs(
             v_buffer,
             h_buffer,
             indices,
-            bounding_boxes,
+            aabb,
             workgroup_id.xy(),
             cell_data,
         );
@@ -344,6 +410,68 @@ mod tests {
 
     use super::*;
     use approx::assert_abs_diff_eq;
+
+    #[test]
+    fn test_compute_aabb_basic() {
+        let u_buffer = vec![63, 0, 0];
+        let v_buffer = vec![0, 63, 0];
+        let indices = vec![0, 1, 2];
+
+        let result = compute_aabb(0, &u_buffer, &v_buffer, &indices);
+        let expected = UVec4::new(0, 0, 63, 63);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_compute_aabb_basic_b() {
+        let u_buffer = vec![0, 0, 63];
+        let v_buffer = vec![0, 63, 0];
+        let indices = vec![0, 1, 2];
+
+        let result = compute_aabb(0, &u_buffer, &v_buffer, &indices);
+        let expected = UVec4::new(0, 0, 63, 63);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_compute_aabb_second_triangle() {
+        let u_buffer = vec![63, 0, 0, 63];
+        let v_buffer = vec![0, 63, 0, 63];
+        let indices = vec![0, 1, 2, 1, 2, 3];
+
+        let result1 = compute_aabb(0, &u_buffer, &v_buffer, &indices);
+        let expected = UVec4::new(0, 0, 63, 63);
+        assert_eq!(result1, expected);
+
+        let result2 = compute_aabb(1, &u_buffer, &v_buffer, &indices);
+        assert_eq!(result2, expected);
+    }
+
+    #[test]
+    fn test_compute_aabb_single_point() {
+        let u_buffer = vec![10, 10, 10];
+        let v_buffer = vec![10, 10, 10];
+        let indices = vec![0, 1, 2];
+
+        let result = compute_aabb(0, &u_buffer, &v_buffer, &indices);
+        let expected = UVec4::new(10, 10, 10, 10);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_compute_aabb_two_points() {
+        let u_buffer = vec![10, 10, 20];
+        let v_buffer = vec![10, 10, 20];
+        let indices = vec![0, 1, 2];
+
+        let result = compute_aabb(0, &u_buffer, &v_buffer, &indices);
+        let expected = UVec4::new(10, 10, 20, 20);
+
+        assert_eq!(result, expected);
+    }
 
     #[test]
     fn test_edge_function_colinear() {

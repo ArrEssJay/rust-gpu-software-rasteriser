@@ -60,21 +60,23 @@ fn print_gpu_capabilities(adapter: &Adapter) {
 }
 
 #[derive(Debug)]
-pub struct WgpuDispatcher {
+pub struct WgpuDispatcher<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::ComputePipeline,
+    rasterise_compute_pipeline: wgpu::ComputePipeline,
+    aabb_compute_pipeline: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
     storage_buffer: wgpu::Buffer,
+    aabb_buffer: wgpu::Buffer,
     readback_buffer: wgpu::Buffer,
     output_raster_size_bytes: u64,
     num_workgroups_x_y: u32,
+    raster_parameters: &'a RasterParameters,
 }
 
-impl WgpuDispatcher {
+impl<'a> WgpuDispatcher<'a> {
     pub async fn setup_compute_shader_wgpu(v: VertexArrays<'_>,
-    params: &RasterParameters,
-    bounding_boxes: &[UVec4]) -> Self {
+        raster_parameters: &'a RasterParameters) -> Self {
       // device
      let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
      let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -132,7 +134,7 @@ impl WgpuDispatcher {
      drop(adapter);
  
      // Raster buffer
-     let output_raster_size_bytes = (params.raster_dim_size as u64 * params.raster_dim_size as u64)
+     let output_raster_size_bytes = (raster_parameters.raster_dim_size as u64 * raster_parameters.raster_dim_size as u64)
          * std::mem::size_of::<f32>() as u64;
      
      println!("Required storage buffer size: {} bytes", output_raster_size_bytes);
@@ -144,20 +146,21 @@ impl WgpuDispatcher {
      }
 
       // Input Data Buffers
-    let params_bytes =  bytemuck::bytes_of(params);
+    let params_bytes =  bytemuck::bytes_of(raster_parameters);
     let u_bytes = bytemuck::cast_slice(v.u);
     let v_bytes = bytemuck::cast_slice(v.v);
     let h_bytes = bytemuck::cast_slice(v.h);
     let indices_bytes =bytemuck::cast_slice(v.i);
 
-    // Serialise Bounding Boxes
-    // Cast to an identical struct that implements IntoBytes
-    let aabb_serialisable: Vec<BufferUVec4> = bounding_boxes
-        .iter()
-        .map(|&a| BufferUVec4::from_uvec4(a))
-        .collect::<Vec<_>>();
+    // // Serialise Bounding Boxes
+    // // Cast to an identical struct that implements IntoBytes
+    // let aabb_serialisable: Vec<BufferUVec4> = bounding_boxes
+    //     .iter()
+    //     .map(|&a| BufferUVec4::from_uvec4(a))
+    //     .collect::<Vec<_>>();
 
-    let aabb_bytes: &[u8]  = bytemuck::cast_slice(&aabb_serialisable);
+    // let aabb_bytes: &[u8]  = bytemuck::cast_slice(&aabb_serialisable);
+
 
     // Create buffers
     let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -190,10 +193,11 @@ impl WgpuDispatcher {
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     });
 
-    let aabb_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let aabb_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("AABB Buffer"),
-        contents: aabb_bytes,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        size:  16u64 * raster_parameters.triangle_count as u64, // AABB=UVEC4=4xu32=16 bytes
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
     });
 
     let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -212,7 +216,6 @@ impl WgpuDispatcher {
     });
 
     // Read the shader binary image
-    let entry_point = "main_cs";
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let spirv_target = env!("SPIRV_TARGET");
     let spirv_crate = env!("SPIRV_CRATE");
@@ -287,7 +290,7 @@ impl WgpuDispatcher {
                 binding: 5,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -348,19 +351,28 @@ impl WgpuDispatcher {
         push_constant_ranges: &[],
     });
 
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+
+    let aabb_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         compilation_options: Default::default(),
         cache: None,
-        label: None,
+        label: Some("spirv_compute_aabb"),
         layout: Some(&pipeline_layout),
         module: &shader_module,
-        entry_point,
+        entry_point: "spirv_compute_aabb",
+    });
+    
+    let rasterise_compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        compilation_options: Default::default(),
+        cache: None,
+        label:  Some("spirv_rasterise"),
+        layout: Some(&pipeline_layout),
+        module: &shader_module,
+        entry_point: "spirv_rasterise",
     });
 
-   
+
     // Calculate the number of workgroups needed - symmetric about x and y
-    let num_workgroups_x_y = params.raster_dim_size / GRID_CELL_SIZE_U32;
-    println!("No. Workgroups Dispatched: {} : ({}x{})", num_workgroups_x_y*num_workgroups_x_y, num_workgroups_x_y,num_workgroups_x_y);
+    let num_workgroups_x_y = raster_parameters.raster_dim_size / GRID_CELL_SIZE_U32;
 
     // Unlikely to be an issue but check the number of workgroups is within device limits
     if num_workgroups_x_y > custom_limits.max_compute_workgroups_per_dimension {
@@ -370,32 +382,82 @@ impl WgpuDispatcher {
     WgpuDispatcher {
         device,
         queue,
-        pipeline,
+        rasterise_compute_pipeline,
+        aabb_compute_pipeline,
         bind_group,
         storage_buffer,
+        aabb_buffer,
         readback_buffer,
         output_raster_size_bytes,
         num_workgroups_x_y,
+        raster_parameters
     }
     }
 
     pub async fn execute_compute_shader_wgpu(&mut self) -> Vec<f32> {
     
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Command Encoder"),
+        let mut aabb_encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("AABB Command Encoder"),
         });
-    
-        // Set up the compute pass
-        // Scope to ensure compute pass is dropped before the buffer is mapped
+        
+        println!("AABB Workgroups Dispatched (1 per triangle): {}", self.raster_parameters.triangle_count);
+
+        // first pass computes bounding boxes per-triangle
         {
-            let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-            compute_pass.set_pipeline(&self.pipeline);
+            let mut aabb_pass = aabb_encoder.begin_compute_pass(&Default::default());
+            aabb_pass.set_pipeline(&self.aabb_compute_pipeline);
+            aabb_pass.set_bind_group(0, &self.bind_group, &[]);
+    
+            // dispatch 1 workgroup per triangle, 1 thread per triangle
+            aabb_pass.dispatch_workgroups(self.raster_parameters.triangle_count,1,1);
+        }
+         // Copy data from the storage buffer to the readback buffer
+         aabb_encoder.copy_buffer_to_buffer(
+            &self.aabb_buffer,
+            0,
+            &self.readback_buffer,
+            0,
+            16u64 * self.raster_parameters.triangle_count as u64,
+        );
+        
+        self.queue.submit(Some(aabb_encoder.finish()));
+    
+        let buffer_slice = self.readback_buffer.slice(..);
+    
+        buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
+    
+        // NOTE(eddyb) `poll` should return only after the above callbacks fire
+        // (see also https://github.com/gfx-rs/wgpu/pull/2698 for more details).
+        self.device.poll(wgpu::Maintain::Wait);
+    
+        let data = buffer_slice.get_mapped_range();
+        let aabb_data: &[BufferUVec4] = bytemuck::cast_slice(&data);
+        println!("AABB Data len {}", aabb_data.len());
+        for i in 0..self.raster_parameters.triangle_count {
+            println!("{:?}", aabb_data[i as usize]);
+        }
+        drop(data);
+        self.readback_buffer.unmap();
+
+
+
+        println!("Cell Rasteriser Workgroups Dispatched: {}x{}", self.num_workgroups_x_y, self.num_workgroups_x_y);
+
+        // Second pass loads vertices per-cell and rasterises each pixel
+        // Scope to ensure compute pass is dropped before the buffer is mapped
+        let mut rasterise_encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Rasterise Command Encoder"),
+        });
+        {
+            let mut compute_pass = rasterise_encoder.begin_compute_pass(&Default::default());
+            compute_pass.set_pipeline(&self.rasterise_compute_pipeline);
             compute_pass.set_bind_group(0, &self.bind_group, &[]);
     
             compute_pass.dispatch_workgroups(self.num_workgroups_x_y, self.num_workgroups_x_y, 1);
         }
+        
         // Copy data from the storage buffer to the readback buffer
-        encoder.copy_buffer_to_buffer(
+        rasterise_encoder.copy_buffer_to_buffer(
             &self.storage_buffer,
             0,
             &self.readback_buffer,
@@ -403,7 +465,7 @@ impl WgpuDispatcher {
             self.output_raster_size_bytes,
         );
     
-        self.queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(rasterise_encoder.finish()));
     
         let buffer_slice = self.readback_buffer.slice(..);
     

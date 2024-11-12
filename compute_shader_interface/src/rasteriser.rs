@@ -1,5 +1,5 @@
-pub mod wgpu_dispatcher;
 pub mod host_dispatcher;
+pub mod wgpu_dispatcher;
 
 use compute_shader::RasterParameters;
 use glam::UVec2;
@@ -26,14 +26,12 @@ pub fn rasterise(
     params: &RasterParameters,
     rasteriser: Rasteriser,
 ) -> Vec<f32> {
-    let bounding_boxes: Vec<UVec4> = generate_triangle_bounding_boxes(vertex_arrays, params);
-
-    
     if rasteriser == Rasteriser::CPU {
-        execute_compute_shader_host(vertex_arrays, params, &bounding_boxes)
+        execute_compute_shader_host(vertex_arrays, params)
     } else {
         async_std::task::block_on(async {
-            let mut dispatcher = WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, params, &bounding_boxes).await;
+            let mut dispatcher =
+                WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, params).await;
             dispatcher.execute_compute_shader_wgpu().await
         })
     }
@@ -82,8 +80,6 @@ pub fn calculate_triangle_aabb(v: &[UVec2]) -> UVec4 {
 
     UVec4::new(min.x, min.y, max.x, max.y)
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -221,7 +217,6 @@ mod tests {
     fn test_plane_gradient_1024_gpu() {
         test_plane(1024, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
-
 
     #[test]
     fn test_plane_gradient_4096_cpu() {

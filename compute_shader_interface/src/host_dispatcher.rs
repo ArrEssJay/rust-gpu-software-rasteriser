@@ -1,27 +1,33 @@
+// This module is responsible for dispatching the compute shader on a CPU host
+
 use rayon::prelude::*;
 use glam::{UVec2, UVec3};
 
 use compute_shader::{
-    cell_pixel_to_raster_index, load_cell_triangles, rasterise_pixel, CellData, RasterParameters, AABB, GRID_CELL_SIZE_U32, MAX_CELL_TRIANGLES
+    cell_pixel_to_raster_index, compute_aabb, load_cell_triangles, rasterise_pixel, CellData, RasterParameters, AABB, GRID_CELL_SIZE_U32, MAX_CELL_TRIANGLES
 };
 use crate::VertexArrays;
+use std::sync::Mutex;
 
 /// Executes the compute shader by parallelizing over 8x8 cells.
 /// Within each cell, pixels are processed serially.
 pub fn execute_compute_shader_host(
     vertex_arrays: VertexArrays,
     params: &RasterParameters,
-    bounding_boxes: &[AABB],
-) -> Vec<f32> { 
-    let raster_size = (params.raster_dim_size * params.raster_dim_size) as usize;
-    use std::sync::Mutex;
-    let storage = Mutex::new(vec![-1.0; raster_size]);
+) -> Vec<f32> {
 
-    let grid_size = params.raster_dim_size / GRID_CELL_SIZE_U32;
+    let raster_size = (params.raster_dim_size * params.raster_dim_size) as usize;
+    let raster = Mutex::new(vec![-1.0; raster_size]);
+    let cell_count = params.raster_dim_size / GRID_CELL_SIZE_U32;
+
+    // Calculate bounding-boxes for each triangle
+    let aabb: Vec<AABB> = (0..params.triangle_count as usize)
+    .map(|i| compute_aabb(i, vertex_arrays.u, vertex_arrays.v, vertex_arrays.i))
+    .collect();
 
     // Parallel iterate over cell rows
-    (0..grid_size).into_par_iter().for_each(|cell_y| {
-        for cell_x in 0..grid_size {
+    (0..cell_count).into_par_iter().for_each(|cell_y| {
+        for cell_x in 0..cell_count {
 
             let mut cell_data: CellData = [[UVec3::ZERO; 3]; MAX_CELL_TRIANGLES];
             
@@ -32,20 +38,26 @@ pub fn execute_compute_shader_host(
                 vertex_arrays.v,
                 vertex_arrays.h,
                 vertex_arrays.i,
-                bounding_boxes,
+                aabb.as_slice(),
                 cell,
                 &mut cell_data,
             );
+            println!("{:?}", cell_data);
+            
 
-            // Iterate over pixels within the 8x8 cell
+            // Iterate over each pixel within the 8x8 cell
             for yp in 0..GRID_CELL_SIZE_U32 {
                 for xp in 0..GRID_CELL_SIZE_U32 {
                                         
                     // Compute local pixel position within the cell
                     let pixel = UVec2::new(xp, yp);
 
+                    // Compute pixel value and store in raster
+                    // The mutex is not ideal, but it is a simple way to share the raster
+                    // between threads in this case, despite each thread only writing to a
+                    // unique region of the raster.
                     let raster_index = cell_pixel_to_raster_index(cell, pixel, params);
-                    let mut storage = storage.lock().unwrap();
+                    let mut storage = raster.lock().unwrap();
                     
                     // will return an out of bounds value if pixel is outside cell
                     let val  = rasterise_pixel(params, &cell_data, cell, pixel);
@@ -57,5 +69,5 @@ pub fn execute_compute_shader_host(
         }
     });
 
-    storage.into_inner().unwrap()
+    raster.into_inner().unwrap()
 }

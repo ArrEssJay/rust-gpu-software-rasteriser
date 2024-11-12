@@ -35,7 +35,6 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
         };
 
         let data_size = dim_size * dim_size;
-        let bounding_boxes: Vec<UVec4> = generate_triangle_bounding_boxes(vertex_arrays, &params);
 
         // Benchmark CPU rasterization
         // there is no need to benchmark the setup of the CPU rasteriser
@@ -51,7 +50,7 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
 
         // Setup GPU dispatcher outside of the execution benchmark
         let mut wgpu_dispatcher =
-            WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, &params, &bounding_boxes)
+            WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, &params)
                 .await;
 
         // Benchmark GPU execution
