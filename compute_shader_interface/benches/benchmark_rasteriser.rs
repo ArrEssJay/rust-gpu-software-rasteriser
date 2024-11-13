@@ -1,15 +1,21 @@
+use std::sync::Arc;
+
 use compute_shader::RasterParameters;
 use compute_shader_interface::{
-    generate_triangle_bounding_boxes, rasterise, wgpu_dispatcher, Rasteriser, VertexArrays,
+    rasterise, wgpu_dispatcher, Rasteriser, VertexArrays,
 };
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use glam::UVec4;
 use wgpu_dispatcher::WgpuDispatcher;
-use async_std::task::block_on;
+use async_std::{sync::Mutex, task::block_on};
+use async_std::task;
 
+use criterion::{
+    criterion_group, criterion_main, BenchmarkId, Criterion,
+    async_executor::AsyncStdExecutor,
+};
 async fn benchmark_rasteriser(c: &mut Criterion) {
     let dim_sizes = [64, 128, 256, 512, 1024, 2048, 4096];
     let mut group = c.benchmark_group("Shader Rasteriser");
+    group.sample_size(10); // Set the sample size to 10
 
     for &dim_size in &dim_sizes {
         // Pair of triangles forming a linear slope
@@ -48,21 +54,28 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
             },
         );
 
+
+        // Benchmark GPU rasterization
+        // We have to stuff around with mutex/ARC to do multiple benchmarks without tearing down the dispatcher
+        // 
         // Setup GPU dispatcher outside of the execution benchmark
-        let mut wgpu_dispatcher =
+        let wgpu_dispatcher = task::block_on(
             WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, &params)
-                .await;
+        );
+        let wgpu_dispatcher = Arc::new(Mutex::new(wgpu_dispatcher));
 
         // Benchmark GPU execution
+        let dispatcher_clone = Arc::clone(&wgpu_dispatcher);
         group.bench_with_input(
             BenchmarkId::new("GPU", data_size),
             &dim_size,
-            |b, _dim_size| {
-                //b.to_async(&executor).iter(|| async {
-                //    wgpu_dispatcher.execute_compute_shader_wgpu().await;
-                //})
-                b.iter(|| {
-                    let _result =wgpu_dispatcher.execute_compute_shader_wgpu();
+            |b, &_dim_size| {
+                b.to_async(AsyncStdExecutor).iter(|| {
+                    let dispatcher = Arc::clone(&dispatcher_clone);
+                    async move {
+                        let mut dispatcher = dispatcher.lock().await;
+                        dispatcher.execute_compute_shader_wgpu().await;
+                    }
                 })
             },
         );

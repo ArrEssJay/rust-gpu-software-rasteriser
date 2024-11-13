@@ -400,8 +400,6 @@ impl<'a> WgpuDispatcher<'a> {
             label: Some("AABB Command Encoder"),
         });
         
-        println!("AABB Workgroups Dispatched (1 per triangle): {}", self.raster_parameters.triangle_count);
-
         // first pass computes bounding boxes per-triangle
         {
             let mut aabb_pass = aabb_encoder.begin_compute_pass(&Default::default());
@@ -432,16 +430,12 @@ impl<'a> WgpuDispatcher<'a> {
     
         let data = buffer_slice.get_mapped_range();
         let aabb_data: &[BufferUVec4] = bytemuck::cast_slice(&data);
-        println!("AABB Data len {}", aabb_data.len());
         for i in 0..self.raster_parameters.triangle_count {
             println!("{:?}", aabb_data[i as usize]);
         }
         drop(data);
         self.readback_buffer.unmap();
 
-
-
-        println!("Cell Rasteriser Workgroups Dispatched: {}x{}", self.num_workgroups_x_y, self.num_workgroups_x_y);
 
         // Second pass loads vertices per-cell and rasterises each pixel
         // Scope to ensure compute pass is dropped before the buffer is mapped
