@@ -1,12 +1,8 @@
 # rust-gpu-software-rasterise
 
-This is an experimental cell-based Compute Shader Rasteriser written in Rust using 
+This is an experimental cell-based Compute Shader Rasteriser written in Rust using `rust-gpu` for SPIR-V targetting. Broadly, the implementation follows Juan Piñeda's method \[1\].
 
-rust-gpu
-
-. Broadly, the implementation follows Juan Piñeda's method \[1\].
-
-It is principally a proof-of-concept and learning exercise. It may not be directly suitable for use in your project. However, as a practical demonstration of a non-trivial GPU compute shader, it may be useful for reference.
+It is principally a proof-of-concept and learning exercise. It may not be directly suitable for use in your project. However, as a practical demonstration of the aforementioned, being an out-of-tree, non-trivial example of using `rust-gpu` I hope you find something useful here.
 
 For certain applications, the GPU render pipeline is not appropriate, such as for analytical applications. Display-targeted graphics APIs like OpenGL, Vulkan, Metal, etc., do not guarantee pixel-exact consistency between implementations. By implementing a software rasteriser on the GPU as a compute shader, we can ensure that the output is consistent regardless of the target platform.
 
@@ -63,6 +59,11 @@ The rasteriser is specifically targeted at closed, triangulated meshes. Some opt
 - **Raster Dimensions**: Vertices/raster dimensions must be equal in `x` and `y` and divisible by 8. This is not a hard limitation, but more flexibility could be added.
 - **Vertex Attribute Range**: Vertex attributes must be supplied as `u32` in the range 0–32767. This could be made more flexible.
 - **Face Value Function**: The function for calculating the triangle face value is currently hard-coded to perform linear interpolation over the plane formed by the three vertices. Enhancements could make this more versatile.
+
+## Build
+- Checkout `rust-gpu` in `$THIS_REPO/..`
+- Ensure you have the nightly rust toolchain specified in `rust-toolchain.toml`
+- `cargo build`
 
 ## Compute Pipeline Stages
 
