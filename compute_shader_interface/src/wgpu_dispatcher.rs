@@ -18,7 +18,7 @@ use compute_shader::GRID_CELL_SIZE_U32;
 // work with the rust-gpu tooling at the time
 // of writing
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct BufferUVec4 {
     pub x: u32,
     pub y: u32,
@@ -151,16 +151,6 @@ impl<'a> WgpuDispatcher<'a> {
     let v_bytes = bytemuck::cast_slice(v.v);
     let h_bytes = bytemuck::cast_slice(v.h);
     let indices_bytes =bytemuck::cast_slice(v.i);
-
-    // // Serialise Bounding Boxes
-    // // Cast to an identical struct that implements IntoBytes
-    // let aabb_serialisable: Vec<BufferUVec4> = bounding_boxes
-    //     .iter()
-    //     .map(|&a| BufferUVec4::from_uvec4(a))
-    //     .collect::<Vec<_>>();
-
-    // let aabb_bytes: &[u8]  = bytemuck::cast_slice(&aabb_serialisable);
-
 
     // Create buffers
     let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -430,9 +420,6 @@ impl<'a> WgpuDispatcher<'a> {
     
         let data = buffer_slice.get_mapped_range();
         let aabb_data: &[BufferUVec4] = bytemuck::cast_slice(&data);
-        for i in 0..self.raster_parameters.triangle_count {
-            println!("{:?}", aabb_data[i as usize]);
-        }
         drop(data);
         self.readback_buffer.unmap();
 
