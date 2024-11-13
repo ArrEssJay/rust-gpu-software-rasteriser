@@ -38,7 +38,8 @@ fn generate_raster(
         triangle_count: (indices.len() / 3) as u32,
     };
 
-    rasterise(vertex_arrays, &params, rasteriser)
+    let raster: Vec<f32> = rasterise(vertex_arrays, &params, rasteriser);
+    raster
  
 }
 

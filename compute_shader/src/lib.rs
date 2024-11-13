@@ -163,9 +163,6 @@ pub fn compute_aabb(
     let i1 = indices[triangle_index * 3 + 1] as usize;
     let i2 = indices[triangle_index * 3 + 2] as usize;
 
-    #[cfg(not(target_arch = "spirv"))]
-    println!("i0: {}, i1: {}, i2: {}", i0, i1, i2);
-
     // Extract x and y components of each point
     let x0 = u_buffer[i0];
     let y0 = v_buffer[i0];
