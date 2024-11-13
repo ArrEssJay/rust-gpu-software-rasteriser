@@ -12,7 +12,7 @@ use std::sync::Mutex;
 /// Executes the compute shader by parallelizing over 8x8 cells.
 /// Within each cell, pixels are processed serially.
 pub fn execute_compute_shader_host(
-    vertex_arrays: VertexBuffers,
+    vertex_buffers: VertexBuffers,
     params: &RasterParameters,
 ) -> Vec<f32> {
 
@@ -22,7 +22,7 @@ pub fn execute_compute_shader_host(
 
     // Calculate bounding-boxes for each triangle
     let aabb: Vec<AABB> = (0..params.triangle_count as usize)
-    .map(|i| compute_aabb(i, vertex_arrays.u, vertex_arrays.v, vertex_arrays.indices))
+    .map(|i| compute_aabb(i, vertex_buffers.u, vertex_buffers.v, vertex_buffers.indices))
     .collect();
 
     // Parallel iterate over cell rows
@@ -34,10 +34,10 @@ pub fn execute_compute_shader_host(
             let cell = UVec2::new(cell_x, cell_y);
             // Load cell vertices (populate shared_indices)
             load_cell_triangles(
-                vertex_arrays.u,
-                vertex_arrays.v,
-                vertex_arrays.attribute,
-                vertex_arrays.indices,
+                vertex_buffers.u,
+                vertex_buffers.v,
+                vertex_buffers.attribute,
+                vertex_buffers.indices,
                 aabb.as_slice(),
                 cell,
                 &mut cell_data,
@@ -60,7 +60,7 @@ pub fn execute_compute_shader_host(
                     
                     // will return an out of bounds value if pixel is outside cell
                     let val  = rasterise_pixel(params, &cell_data, cell, pixel);
-                    if val > params.height_min {
+                    if val > params.attribute_f_min {
                         storage[raster_index] = val;
                     }
                 }

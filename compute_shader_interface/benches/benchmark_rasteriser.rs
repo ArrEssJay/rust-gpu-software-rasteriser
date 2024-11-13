@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use compute_shader::RasterParameters;
 use compute_shader_interface::{
-    rasterise, wgpu_dispatcher, Rasteriser, VertexArrays,
+    rasterise, wgpu_dispatcher, Rasteriser, VertexBuffers,
 };
 use wgpu_dispatcher::WgpuDispatcher;
 use async_std::{sync::Mutex, task::block_on};
@@ -23,19 +23,20 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
         let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
         let u: Vec<u32> = vec![0, max, 0, max];
         let v: Vec<u32> = vec![0, 0, max, max];
-        let h: Vec<u32> = vec![0, 32767, 0, 32767];
+        let attribute: Vec<u32> = vec![0, 32767, 0, 32767];
 
-        let vertex_arrays = VertexArrays {
+        let vertex_buffers = VertexBuffers {
             u: &u,
             v: &v,
-            h: &h,
-            i: &indices,
+            attribute: &attribute,
+            indices: &indices,
         };
 
         let params = RasterParameters {
             raster_dim_size: dim_size,
-            height_min: 0.0,
-            height_max: 100.0,
+            attribute_f_min: 0.0,
+            attribute_f_max: 100.0,
+            attribute_u_max: 32767,
             vertex_count: u.len() as u32,
             triangle_count: (indices.len() / 3) as u32,
         };
@@ -49,7 +50,7 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
             &dim_size,
             |b, _dim_size| {
                 b.iter(|| {
-                    let _result = rasterise(vertex_arrays, &params, Rasteriser::CPU);
+                    let _result = rasterise(vertex_buffers, &params, Rasteriser::CPU);
                 })
             },
         );
@@ -60,7 +61,7 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
         // 
         // Setup GPU dispatcher outside of the execution benchmark
         let wgpu_dispatcher = task::block_on(
-            WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, &params)
+            WgpuDispatcher::setup_compute_shader_wgpu(vertex_buffers, &params)
         );
         let wgpu_dispatcher = Arc::new(Mutex::new(wgpu_dispatcher));
 

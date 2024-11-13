@@ -11,7 +11,7 @@ use spirv_std::{
 
 // Importing from external crates is problematic due
 // to the spir-v compiler. Hence we define some of the
-// constants ad structures here, despite this not
+// constants and structures here, despite this not
 // necessarily being the best practice
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 pub const GRID_CELL_SIZE: usize = 8;
@@ -24,8 +24,9 @@ pub type CellData = [[UVec3; 3]; MAX_CELL_TRIANGLES];
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct RasterParameters {
     pub raster_dim_size: u32,
-    pub height_min: f32,
-    pub height_max: f32,
+    pub attribute_f_min: f32,
+    pub attribute_f_max: f32,
+    pub attribute_u_max: u32,
     pub vertex_count: u32,
     pub triangle_count: u32,
 }
@@ -33,15 +34,17 @@ pub struct RasterParameters {
 impl RasterParameters {
     pub fn new(
         raster_dim_size: u32,
-        height_min: f32,
-        height_max: f32,
+        attribute_f_min: f32,
+        attribute_f_max: f32,
+        attribute_u_max: u32,
         vertex_count: u32,
         triangle_count: u32,
     ) -> Self {
         Self {
             raster_dim_size,
-            height_min,
-            height_max,
+            attribute_f_min,
+            attribute_f_max,
+            attribute_u_max,
             vertex_count,
             triangle_count,
         }
@@ -226,7 +229,7 @@ pub fn spirv_rasterise(
 
     // Will return an invalid value if the pixel is outside the cell
     let val = rasterise_pixel(params, cell_data, workgroup_id.xy(), local_id.xy());
-    if val > params.height_min {
+    if val > params.attribute_f_min {
         storage[raster_index] = val;
     }
 }
@@ -309,13 +312,13 @@ pub fn rasterise_pixel(
 
         if w[0] >= 0 && w[1] >= 0 && w[2] >= 0 {
             let v_xyz_f: [Vec3; 3] = [v[0].as_vec3(), v[1].as_vec3(), v[2].as_vec3()];
-            let height =
+            let attribute =
                 interpolate_barycentric(v_xyz_f, p_raster_xy.as_vec2(), raster_parameters).unwrap();
-            return height;
+            return attribute;
         }
     }
     // If no triangle contains the pixel, return NAN
-    raster_parameters.height_min - 1.0
+    raster_parameters.attribute_f_min - 1.0
 }
 
 // Is v2 inside the edge formed by v0 and v1
@@ -384,7 +387,7 @@ pub fn calculate_barycentric_weights(v: [Vec2; 3], p: Vec2) -> [f32; 3] {
     ]
 }
 
-// Interpolate the height of a point p inside the triangle formed by vertices v
+// Interpolate the attribute of a point p inside the triangle formed by vertices v
 pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters) -> Option<f32> {
     // RJ - error casting pointers spirv
     //let wb = calculate_barycentric_weights(v.map(|v| v.xy()), p);
@@ -394,11 +397,12 @@ pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters)
     // Not checking weights as we have already decided that the point is inside the triangle
     let numerator = wb[0] * v[0].z + wb[1] * v[1].z + wb[2] * v[2].z; // 131068
 
-    // Normalize and map the height. Unmapped range is 0-32767
-    let normalized_height = numerator / 32767.;
-    let mapped_height =
-        params.height_min + normalized_height * (params.height_max - params.height_min);
-    Some(mapped_height)
+    // Normalize and map the attribute. Unmapped range is 0..attribute_u_max
+    // Mapped range is attribute_f_min..attribute_f_max
+    let normalized_attribute = numerator / params.attribute_u_max as f32;
+    let mapped_attribute =
+        params.attribute_f_min + normalized_attribute * (params.attribute_f_max - params.attribute_f_min);
+    Some(mapped_attribute)
 }
 
 // These tests will be built and run for the host target only
@@ -668,7 +672,7 @@ mod tests {
             UVec3::new(0, 3, 0),
             UVec3::new(3, 0, 0),
         ];
-        let params: RasterParameters = RasterParameters::new(100, 0., 1., 0, 0);
+        let params: RasterParameters = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
@@ -683,7 +687,7 @@ mod tests {
             UVec3::new(0, 127, 32767),
             UVec3::new(127, 0, 32767),
         ];
-        let params: RasterParameters = RasterParameters::new(128, 0., 1., 0, 0);
+        let params: RasterParameters = RasterParameters::new(128, 0., 1.,32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert!(result.is_some());
@@ -692,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_inside_triangle_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -708,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_on_edge_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -724,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_outside_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
 
         let p = UVec2::new(3, 3);
         let v = [
@@ -739,7 +743,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -755,7 +759,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_on_edge() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
 
         let p = UVec2::new(1, 0);
         let v = [
@@ -771,7 +775,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -787,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_degenerate_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [

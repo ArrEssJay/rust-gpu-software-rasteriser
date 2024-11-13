@@ -6,39 +6,40 @@ use tiff::encoder::colortype::Gray32Float;
 use tiff::encoder::TiffEncoder;
 use tiff::encoder::compression::Lzw;
 use compute_shader::RasterParameters;
-use compute_shader_interface::{rasterise, Rasteriser, VertexArrays};
+use compute_shader_interface::{rasterise, Rasteriser, VertexBuffers};
 
 fn generate_raster(
     dim_size: u32,
     rasteriser: Rasteriser,
 ) -> Vec<f32>{
     // Simple pair of triangles forming a plane
-    // Either flat at the max height or sloping from 0 along the x-axis
+    // Either flat at the max attribute or sloping from 0 along the x-axis
     let max = dim_size - 1;
     let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
 
     let u: Vec<u32> = vec![0, max, 0, max];
     let v: Vec<u32> = vec![0, 0, max, max];
 
-    let h: Vec<u32> =vec![0, 32767, 0, 32767];
+    let attribute: Vec<u32> =vec![0, 32767, 0, 32767];
     
 
-    let vertex_arrays = VertexArrays {
+    let vertex_buffers = VertexBuffers {
         u: &u,
         v: &v,
-        h: &h,
-        i: &indices,
+        attribute: &attribute,
+        indices: &indices,
     };
 
     let params = RasterParameters {
         raster_dim_size: dim_size,
-        height_min: 0.0,
-        height_max: 100.0,
+        attribute_f_min: 0.0,
+        attribute_f_max: 100.0,
+        attribute_u_max: 32767,
         vertex_count: u.len() as u32,
         triangle_count: (indices.len() / 3) as u32,
     };
 
-    let raster: Vec<f32> = rasterise(vertex_arrays, &params, rasteriser);
+    let raster: Vec<f32> = rasterise(vertex_buffers, &params, rasteriser);
     raster
  
 }

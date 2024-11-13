@@ -22,23 +22,23 @@ pub enum Rasteriser {
     GPU,
 }
 pub fn rasterise(
-    vertex_arrays: VertexBuffers,
+    vertex_buffers: VertexBuffers,
     params: &RasterParameters,
     rasteriser: Rasteriser,
 ) -> Vec<f32> {
     if rasteriser == Rasteriser::CPU {
-        execute_compute_shader_host(vertex_arrays, params)
+        execute_compute_shader_host(vertex_buffers, params)
     } else {
         async_std::task::block_on(async {
             let mut dispatcher =
-                WgpuDispatcher::setup_compute_shader_wgpu(vertex_arrays, params).await;
+                WgpuDispatcher::setup_compute_shader_wgpu(vertex_buffers, params).await;
             dispatcher.execute_compute_shader_wgpu().await
         })
     }
 }
 
 pub fn generate_triangle_bounding_boxes(
-    vertex_arrays: VertexBuffers,
+    vertex_buffers: VertexBuffers,
     params: &RasterParameters,
 ) -> Vec<UVec4> {
     let mut bounding_boxes: Vec<UVec4> = Vec::new();
@@ -46,23 +46,23 @@ pub fn generate_triangle_bounding_boxes(
     for i in 0..params.triangle_count as usize {
         let v0 = i * 3;
         let vertex_indices: [usize; 3] = [
-            vertex_arrays.indices[v0] as usize,
-            vertex_arrays.indices[v0 + 1] as usize,
-            vertex_arrays.indices[v0 + 2] as usize,
+            vertex_buffers.indices[v0] as usize,
+            vertex_buffers.indices[v0 + 1] as usize,
+            vertex_buffers.indices[v0 + 2] as usize,
         ];
 
         let vertices = [
             UVec2::new(
-                vertex_arrays.u[vertex_indices[0]],
-                vertex_arrays.v[vertex_indices[0]],
+                vertex_buffers.u[vertex_indices[0]],
+                vertex_buffers.v[vertex_indices[0]],
             ),
             UVec2::new(
-                vertex_arrays.u[vertex_indices[1]],
-                vertex_arrays.v[vertex_indices[1]],
+                vertex_buffers.u[vertex_indices[1]],
+                vertex_buffers.v[vertex_indices[1]],
             ),
             UVec2::new(
-                vertex_arrays.u[vertex_indices[2]],
-                vertex_arrays.v[vertex_indices[2]],
+                vertex_buffers.u[vertex_indices[2]],
+                vertex_buffers.v[vertex_indices[2]],
             ),
         ];
 
@@ -146,28 +146,29 @@ mod tests {
         let u: Vec<u32> = vec![0, max, 0, max];
         let v: Vec<u32> = vec![0, 0, max, max];
 
-        let h: Vec<u32> = if gradient {
+        let attribute: Vec<u32> = if gradient {
             vec![0, 32767, 0, 32767]
         } else {
             vec![32767, 32767, 32767, 32767]
         };
 
-        let vertex_arrays = VertexBuffers {
+        let vertex_buffers = VertexBuffers {
             u: &u,
             v: &v,
-            attribute: &h,
+            attribute: &attribute,
             indices: &indices,
         };
 
         let params = RasterParameters {
             raster_dim_size: dim_size,
-            height_min: 0.0,
-            height_max: height,
+            attribute_f_min: 0.0,
+            attribute_f_max: height,
+            attribute_u_max: 32767,
             vertex_count: u.len() as u32,
             triangle_count: (indices.len() / 3) as u32,
         };
 
-        let result = rasterise(vertex_arrays, &params, rasteriser);
+        let result = rasterise(vertex_buffers, &params, rasteriser);
 
         // Compare to the reference value(s)
         if gradient {
