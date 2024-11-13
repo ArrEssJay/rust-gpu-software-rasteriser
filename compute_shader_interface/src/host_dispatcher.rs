@@ -42,7 +42,6 @@ pub fn execute_compute_shader_host(
                 cell,
                 &mut cell_data,
             );
-            println!("{:?}", cell_data);
             
 
             // Iterate over each pixel within the 8x8 cell
