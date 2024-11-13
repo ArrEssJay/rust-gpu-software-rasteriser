@@ -4,17 +4,17 @@
    height="540"
    viewBox="0 0 960 540"
    version="1.1"
-   id="svg29"
-   sodipodi:docname="bench_comparison.svg"
+   id="svg33"
+   sodipodi:docname="lines.svg"
    inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
   <defs
-     id="defs29" />
+     id="defs33" />
   <sodipodi:namedview
-     id="namedview29"
+     id="namedview33"
      pagecolor="#ffffff"
      bordercolor="#000000"
      borderopacity="0.25"
@@ -26,18 +26,18 @@
      inkscape:cx="479.54545"
      inkscape:cy="270.45455"
      inkscape:window-width="2032"
-     inkscape:window-height="1140"
+     inkscape:window-height="1112"
      inkscape:window-x="244"
      inkscape:window-y="71"
      inkscape:window-maximized="0"
-     inkscape:current-layer="svg29" />
+     inkscape:current-layer="svg33" />
   <rect
-     style="fill:#ffffff;fill-opacity:1;stroke-width:1.02367"
-     id="rect30"
-     width="966.36365"
-     height="547.22778"
-     x="-3.6363413"
-     y="-3.6138687" />
+     style="fill:#ffffff"
+     id="rect34"
+     width="963.63641"
+     height="541.81818"
+     x="-0.90909082"
+     y="-2.1674417e-08" />
   <text
      x="480"
      y="5"
@@ -48,7 +48,7 @@
      opacity="1"
      fill="#000000"
      id="text1">
-Shader Rasteriser/GPU: Comparison
+Shader Rasteriser: Comparison
 </text>
   <text
      x="26"
@@ -61,7 +61,7 @@ Shader Rasteriser/GPU: Comparison
      fill="#000000"
      transform="rotate(270, 26, 263)"
      id="text2">
-Average time (ms)
+Average time (s)
 </text>
   <text
      x="510"
@@ -84,25 +84,6 @@ Input
      id="polyline3" />
   <text
      x="76"
-     y="441"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text4">
-10.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,441 85,441 "
-     id="polyline4" />
-  <text
-     x="76"
      y="404"
      dy="0.5ex"
      text-anchor="end"
@@ -110,8 +91,8 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text5">
-20.0
+     id="text4">
+1.0
 </text>
   <polyline
      fill="none"
@@ -119,10 +100,29 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="80,404 85,404 "
+     id="polyline4" />
+  <text
+     x="76"
+     y="335"
+     dy="0.5ex"
+     text-anchor="end"
+     font-family="sans-serif"
+     font-size="9.67741935483871"
+     opacity="1"
+     fill="#000000"
+     id="text5">
+2.0
+</text>
+  <polyline
+     fill="none"
+     opacity="1"
+     stroke="#000000"
+     stroke-width="1"
+     points="80,335 85,335 "
      id="polyline5" />
   <text
      x="76"
-     y="367"
+     y="266"
      dy="0.5ex"
      text-anchor="end"
      font-family="sans-serif"
@@ -130,18 +130,18 @@ Input
      opacity="1"
      fill="#000000"
      id="text6">
-30.0
+3.0
 </text>
   <polyline
      fill="none"
      opacity="1"
      stroke="#000000"
      stroke-width="1"
-     points="80,367 85,367 "
+     points="80,266 85,266 "
      id="polyline6" />
   <text
      x="76"
-     y="330"
+     y="196"
      dy="0.5ex"
      text-anchor="end"
      font-family="sans-serif"
@@ -149,18 +149,18 @@ Input
      opacity="1"
      fill="#000000"
      id="text7">
-40.0
+4.0
 </text>
   <polyline
      fill="none"
      opacity="1"
      stroke="#000000"
      stroke-width="1"
-     points="80,330 85,330 "
+     points="80,196 85,196 "
      id="polyline7" />
   <text
      x="76"
-     y="293"
+     y="127"
      dy="0.5ex"
      text-anchor="end"
      font-family="sans-serif"
@@ -168,18 +168,18 @@ Input
      opacity="1"
      fill="#000000"
      id="text8">
-50.0
+5.0
 </text>
   <polyline
      fill="none"
      opacity="1"
      stroke="#000000"
      stroke-width="1"
-     points="80,293 85,293 "
+     points="80,127 85,127 "
      id="polyline8" />
   <text
      x="76"
-     y="256"
+     y="58"
      dy="0.5ex"
      text-anchor="end"
      font-family="sans-serif"
@@ -187,117 +187,22 @@ Input
      opacity="1"
      fill="#000000"
      id="text9">
-60.0
+6.0
 </text>
   <polyline
      fill="none"
      opacity="1"
      stroke="#000000"
      stroke-width="1"
-     points="80,256 85,256 "
+     points="80,58 85,58 "
      id="polyline9" />
-  <text
-     x="76"
-     y="219"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text10">
-70.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,219 85,219 "
-     id="polyline10" />
-  <text
-     x="76"
-     y="182"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text11">
-80.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,182 85,182 "
-     id="polyline11" />
-  <text
-     x="76"
-     y="145"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text12">
-90.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,145 85,145 "
-     id="polyline12" />
-  <text
-     x="76"
-     y="108"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text13">
-100.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,108 85,108 "
-     id="polyline13" />
-  <text
-     x="76"
-     y="71"
-     dy="0.5ex"
-     text-anchor="end"
-     font-family="sans-serif"
-     font-size="9.67741935483871"
-     opacity="1"
-     fill="#000000"
-     id="text14">
-110.0
-</text>
-  <polyline
-     fill="none"
-     opacity="1"
-     stroke="#000000"
-     stroke-width="1"
-     points="80,71 85,71 "
-     id="polyline14" />
   <polyline
      fill="none"
      opacity="1"
      stroke="#000000"
      stroke-width="1"
      points="86,474 933,474 "
-     id="polyline15" />
+     id="polyline10" />
   <text
      x="186"
      y="484"
@@ -307,7 +212,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text15">
+     id="text10">
 2000000.0
 </text>
   <polyline
@@ -316,7 +221,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="186,474 186,479 "
-     id="polyline16" />
+     id="polyline11" />
   <text
      x="287"
      y="484"
@@ -326,7 +231,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text16">
+     id="text11">
 4000000.0
 </text>
   <polyline
@@ -335,7 +240,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="287,474 287,479 "
-     id="polyline17" />
+     id="polyline12" />
   <text
      x="388"
      y="484"
@@ -345,7 +250,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text17">
+     id="text12">
 6000000.0
 </text>
   <polyline
@@ -354,7 +259,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="388,474 388,479 "
-     id="polyline18" />
+     id="polyline13" />
   <text
      x="489"
      y="484"
@@ -364,7 +269,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text18">
+     id="text13">
 8000000.0
 </text>
   <polyline
@@ -373,7 +278,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="489,474 489,479 "
-     id="polyline19" />
+     id="polyline14" />
   <text
      x="590"
      y="484"
@@ -383,7 +288,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text19">
+     id="text14">
 10000000.0
 </text>
   <polyline
@@ -392,7 +297,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="590,474 590,479 "
-     id="polyline20" />
+     id="polyline15" />
   <text
      x="691"
      y="484"
@@ -402,7 +307,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text20">
+     id="text15">
 12000000.0
 </text>
   <polyline
@@ -411,7 +316,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="691,474 691,479 "
-     id="polyline21" />
+     id="polyline16" />
   <text
      x="792"
      y="484"
@@ -421,7 +326,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text21">
+     id="text16">
 14000000.0
 </text>
   <polyline
@@ -430,7 +335,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="792,474 792,479 "
-     id="polyline22" />
+     id="polyline17" />
   <text
      x="893"
      y="484"
@@ -440,7 +345,7 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text22">
+     id="text17">
 16000000.0
 </text>
   <polyline
@@ -449,7 +354,7 @@ Input
      stroke="#000000"
      stroke-width="1"
      points="893,474 893,479 "
-     id="polyline23" />
+     id="polyline18" />
   <circle
      cx="86"
      cy="473"
@@ -458,7 +363,7 @@ Input
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle23" />
+     id="circle18" />
   <circle
      cx="86"
      cy="473"
@@ -467,43 +372,43 @@ Input
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle24" />
+     id="circle19" />
   <circle
      cx="89"
+     cy="472"
+     r="3"
+     opacity="1"
+     fill="#B22222"
+     stroke="none"
+     stroke-width="1"
+     id="circle20" />
+  <circle
+     cx="99"
      cy="468"
      r="3"
      opacity="1"
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle25" />
-  <circle
-     cx="99"
-     cy="464"
-     r="3"
-     opacity="1"
-     fill="#B22222"
-     stroke="none"
-     stroke-width="1"
-     id="circle26" />
+     id="circle21" />
   <circle
      cx="138"
-     cy="452"
+     cy="451"
      r="3"
      opacity="1"
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle27" />
+     id="circle22" />
   <circle
      cx="297"
-     cy="377"
+     cy="380"
      r="3"
      opacity="1"
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle28" />
+     id="circle23" />
   <circle
      cx="933"
      cy="52"
@@ -512,14 +417,84 @@ Input
      fill="#B22222"
      stroke="none"
      stroke-width="1"
-     id="circle29" />
+     id="circle24" />
   <polyline
      fill="none"
      opacity="1"
      stroke="#B22222"
      stroke-width="1"
-     points="86,473 86,473 89,468 99,464 138,452 297,377 933,52 "
-     id="polyline29" />
+     points="86,473 86,473 89,472 99,468 138,451 297,380 933,52 "
+     id="polyline24" />
+  <circle
+     cx="86"
+     cy="473"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle25" />
+  <circle
+     cx="86"
+     cy="473"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle26" />
+  <circle
+     cx="89"
+     cy="473"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle27" />
+  <circle
+     cx="99"
+     cy="473"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle28" />
+  <circle
+     cx="138"
+     cy="473"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle29" />
+  <circle
+     cx="297"
+     cy="472"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle30" />
+  <circle
+     cx="933"
+     cy="466"
+     r="3"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     stroke-width="1"
+     id="circle31" />
+  <polyline
+     fill="none"
+     opacity="1"
+     stroke="#2E8B57"
+     stroke-width="1"
+     points="86,473 86,473 89,473 99,473 138,473 297,472 933,466 "
+     id="polyline31" />
   <text
      x="131"
      y="67"
@@ -529,7 +504,19 @@ Input
      font-size="9.67741935483871"
      opacity="1"
      fill="#000000"
-     id="text29">
+     id="text31">
+CPU
+</text>
+  <text
+     x="131"
+     y="82"
+     dy="0.76em"
+     text-anchor="start"
+     font-family="sans-serif"
+     font-size="9.67741935483871"
+     opacity="1"
+     fill="#000000"
+     id="text32">
 GPU
 </text>
   <rect
@@ -540,5 +527,14 @@ GPU
      opacity="1"
      fill="#B22222"
      stroke="none"
-     id="rect29" />
+     id="rect32" />
+  <rect
+     x="101"
+     y="82"
+     width="20"
+     height="10"
+     opacity="1"
+     fill="#2E8B57"
+     stroke="none"
+     id="rect33" />
 </svg>
