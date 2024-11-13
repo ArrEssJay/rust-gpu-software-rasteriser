@@ -9,11 +9,11 @@ use wgpu_dispatcher::WgpuDispatcher;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct VertexArrays<'a> {
+pub struct VertexBuffers<'a> {
     pub u: &'a [u32],
     pub v: &'a [u32],
-    pub h: &'a [u32],
-    pub i: &'a [u32],
+    pub attribute: &'a [u32],
+    pub indices: &'a [u32],
 }
 
 #[derive(PartialEq)]
@@ -22,7 +22,7 @@ pub enum Rasteriser {
     GPU,
 }
 pub fn rasterise(
-    vertex_arrays: VertexArrays,
+    vertex_arrays: VertexBuffers,
     params: &RasterParameters,
     rasteriser: Rasteriser,
 ) -> Vec<f32> {
@@ -38,7 +38,7 @@ pub fn rasterise(
 }
 
 pub fn generate_triangle_bounding_boxes(
-    vertex_arrays: VertexArrays,
+    vertex_arrays: VertexBuffers,
     params: &RasterParameters,
 ) -> Vec<UVec4> {
     let mut bounding_boxes: Vec<UVec4> = Vec::new();
@@ -46,9 +46,9 @@ pub fn generate_triangle_bounding_boxes(
     for i in 0..params.triangle_count as usize {
         let v0 = i * 3;
         let vertex_indices: [usize; 3] = [
-            vertex_arrays.i[v0] as usize,
-            vertex_arrays.i[v0 + 1] as usize,
-            vertex_arrays.i[v0 + 2] as usize,
+            vertex_arrays.indices[v0] as usize,
+            vertex_arrays.indices[v0 + 1] as usize,
+            vertex_arrays.indices[v0 + 2] as usize,
         ];
 
         let vertices = [
@@ -152,11 +152,11 @@ mod tests {
             vec![32767, 32767, 32767, 32767]
         };
 
-        let vertex_arrays = VertexArrays {
+        let vertex_arrays = VertexBuffers {
             u: &u,
             v: &v,
-            h: &h,
-            i: &indices,
+            attribute: &h,
+            indices: &indices,
         };
 
         let params = RasterParameters {

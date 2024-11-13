@@ -11,7 +11,7 @@ use spirv_std::{
 
 // Importing from external crates is problematic due
 // to the spir-v compiler. Hence we define some of the
-// constants and structures here, despite this not
+// constants ad structures here, despite this not
 // necessarily being the best practice
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 pub const GRID_CELL_SIZE: usize = 8;

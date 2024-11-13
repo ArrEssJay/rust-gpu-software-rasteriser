@@ -5,7 +5,7 @@ use std::io::Read;
 use wgpu::util::DeviceExt;
 use wgpu::{Adapter, Features,Limits};
 
-use crate::VertexArrays;
+use crate::VertexBuffers;
 use compute_shader::RasterParameters;
 use compute_shader::GRID_CELL_SIZE_U32;
 
@@ -75,7 +75,7 @@ pub struct WgpuDispatcher<'a> {
 }
 
 impl<'a> WgpuDispatcher<'a> {
-    pub async fn setup_compute_shader_wgpu(v: VertexArrays<'_>,
+    pub async fn setup_compute_shader_wgpu(v: VertexBuffers<'_>,
         raster_parameters: &'a RasterParameters) -> Self {
       // device
      let backends = wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY);
@@ -149,8 +149,8 @@ impl<'a> WgpuDispatcher<'a> {
     let params_bytes =  bytemuck::bytes_of(raster_parameters);
     let u_bytes = bytemuck::cast_slice(v.u);
     let v_bytes = bytemuck::cast_slice(v.v);
-    let h_bytes = bytemuck::cast_slice(v.h);
-    let indices_bytes =bytemuck::cast_slice(v.i);
+    let h_bytes = bytemuck::cast_slice(v.attribute);
+    let indices_bytes =bytemuck::cast_slice(v.indices);
 
     // Create buffers
     let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

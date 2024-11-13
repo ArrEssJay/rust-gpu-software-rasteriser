@@ -6,13 +6,13 @@ use glam::{UVec2, UVec3};
 use compute_shader::{
     cell_pixel_to_raster_index, compute_aabb, load_cell_triangles, rasterise_pixel, CellData, RasterParameters, AABB, GRID_CELL_SIZE_U32, MAX_CELL_TRIANGLES
 };
-use crate::VertexArrays;
+use crate::VertexBuffers;
 use std::sync::Mutex;
 
 /// Executes the compute shader by parallelizing over 8x8 cells.
 /// Within each cell, pixels are processed serially.
 pub fn execute_compute_shader_host(
-    vertex_arrays: VertexArrays,
+    vertex_arrays: VertexBuffers,
     params: &RasterParameters,
 ) -> Vec<f32> {
 
@@ -22,7 +22,7 @@ pub fn execute_compute_shader_host(
 
     // Calculate bounding-boxes for each triangle
     let aabb: Vec<AABB> = (0..params.triangle_count as usize)
-    .map(|i| compute_aabb(i, vertex_arrays.u, vertex_arrays.v, vertex_arrays.i))
+    .map(|i| compute_aabb(i, vertex_arrays.u, vertex_arrays.v, vertex_arrays.indices))
     .collect();
 
     // Parallel iterate over cell rows
@@ -36,8 +36,8 @@ pub fn execute_compute_shader_host(
             load_cell_triangles(
                 vertex_arrays.u,
                 vertex_arrays.v,
-                vertex_arrays.h,
-                vertex_arrays.i,
+                vertex_arrays.attribute,
+                vertex_arrays.indices,
                 aabb.as_slice(),
                 cell,
                 &mut cell_data,
