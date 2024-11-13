@@ -84,7 +84,8 @@ The rasteriser is specifically targeted at closed, triangulated meshes. Some opt
 
 ## Testing
 
-Run `cargo bench` to obtain benchmark numbers. The performance is reasonable, and the efficiency versus latency trade-offs are as expected.
+Run `cargo bench` to obtain benchmark numbers. A 52x speedup (115mS vs 6S) compared to running multithreaded on the CPU for a 4096x4096 raster was achieved on a 2019 Macbook Pro (AMD Radeon Pro 560X).
+![Benchmark](assets/bench_comparison.svg)
 
 ## References
 
