@@ -409,19 +409,7 @@ impl<'a> WgpuDispatcher<'a> {
         );
         
         self.queue.submit(Some(aabb_encoder.finish()));
-    
-        let buffer_slice = self.readback_buffer.slice(..);
-    
-        buffer_slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
-    
-        // NOTE(eddyb) `poll` should return only after the above callbacks fire
-        // (see also https://github.com/gfx-rs/wgpu/pull/2698 for more details).
-        self.device.poll(wgpu::Maintain::Wait);
-    
-        let data = buffer_slice.get_mapped_range();
-        let aabb_data: &[BufferUVec4] = bytemuck::cast_slice(&data);
-        drop(data);
-        self.readback_buffer.unmap();
+
 
 
         // Second pass loads vertices per-cell and rasterises each pixel
