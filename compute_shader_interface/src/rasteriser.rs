@@ -1,3 +1,6 @@
+#![feature(sync_unsafe_cell)]
+
+
 pub mod host_dispatcher;
 pub mod wgpu_dispatcher;
 
