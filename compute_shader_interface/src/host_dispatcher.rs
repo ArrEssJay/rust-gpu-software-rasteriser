@@ -50,6 +50,7 @@ pub fn execute_compute_shader_host(
                 aabb.as_slice(),
                 cell,
                 &mut cell_data,
+                cell_y * GRID_CELL_SIZE_U32 + cell_x,
             );
 
             // Iterate over each pixel within the 8x8 cell

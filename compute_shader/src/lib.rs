@@ -15,6 +15,7 @@ use spirv_std::{
 // necessarily being the best practice
 pub const GRID_CELL_SIZE_U32: u32 = 8;
 pub const GRID_CELL_SIZE: usize = 8;
+pub const GRID_CELL_THREADS: usize = GRID_CELL_SIZE * GRID_CELL_SIZE;
 
 // Shared memory for per-cell vertices
 pub const MAX_CELL_TRIANGLES: usize = 8;
@@ -189,8 +190,9 @@ pub fn compute_aabb(
 #[allow(clippy::too_many_arguments)]
 #[spirv(compute(threads(8, 8, 1)))]
 pub fn spirv_rasterise(
-    #[spirv(workgroup_id)] workgroup_id: UVec3,
-    #[spirv(local_invocation_id)] local_id: UVec3,
+    #[spirv(workgroup_id)] cell: UVec3,
+    #[spirv(local_invocation_index)] cell_thread: u32,
+    #[spirv(local_invocation_id)] cell_pixel: UVec3,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] params: &RasterParameters,
     #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] u_buffer: &[u32],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] v_buffer: &[u32],
@@ -202,19 +204,17 @@ pub fn spirv_rasterise(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
     #[spirv(workgroup)] cell_data: &mut CellData,
 ) {
-    // Designate thread (0,0,0) to load data into shared memory
-    if local_id.x == 0 && local_id.y == 0 && local_id.z == 0 {
-        // Load the vertices for this cell into shared memory
-        load_cell_triangles(
-            u_buffer,
-            v_buffer,
-            h_buffer,
-            indices,
-            aabb,
-            workgroup_id.xy(),
-            cell_data,
-        );
-    }
+    // All threads load cell triangles
+    load_cell_triangles(
+        u_buffer,
+        v_buffer,
+        h_buffer,
+        indices,
+        aabb,
+        cell.xy(),
+        cell_data,
+        cell_thread,
+    );
 
     // Wait here until the vertices are loaded into shared memory
     unsafe {
@@ -225,15 +225,16 @@ pub fn spirv_rasterise(
     // the raster write is done here to allow the software rasteriser to use the same
     // code but handle parallelisation and safe access of shared memory
     let raster_index =
-        cell_pixel_x_y_to_raster_index(local_id.x, local_id.y, workgroup_id.xy(), params);
+        cell_pixel_x_y_to_raster_index(cell_pixel.x, cell_pixel.y, cell.xy(), params);
 
     // Will return an invalid value if the pixel is outside the cell
-    let val = rasterise_pixel(params, cell_data, workgroup_id.xy(), local_id.xy());
+    let val = rasterise_pixel(params, cell_data, cell.xy(), cell_pixel.xy());
     if val > params.attribute_f_min {
         storage[raster_index] = val;
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn load_cell_triangles(
     u_buffer: &[u32],
     v_buffer: &[u32],
@@ -242,16 +243,26 @@ pub fn load_cell_triangles(
     bounding_boxes: &[AABB],
     cell: UVec2,
     cell_data: &mut CellData,
+    cell_thread: u32,
 ) {
-    for i in 0..bounding_boxes.len() {
+
+    let num_threads = GRID_CELL_THREADS;
+
+    for i in (cell_thread as usize..bounding_boxes.len()).step_by(num_threads) {
         if i >= MAX_CELL_TRIANGLES {
-            // We can't panic so just return with nothing rendered for this cell
-            // This lacks finesse but for this implementation it will suffice
-            return;
+            // Break if we have reached the maximum number of triangles
+            break;
         }
+
         let aabb = &bounding_boxes[i];
         if intersects_cell(aabb, cell) {
-            let triangle_indices = [indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]];
+
+            let idx = i * 3;
+            let triangle_indices = [
+                indices[idx],
+                indices[idx + 1],
+                indices[idx + 2],
+            ];
             let v = [
                 UVec3::new(
                     u_buffer[triangle_indices[0] as usize],
