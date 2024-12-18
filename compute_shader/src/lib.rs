@@ -65,6 +65,8 @@ pub trait AABBValues {
 
     fn min(&self) -> UVec2;
     fn max(&self) -> UVec2;
+
+    fn new_aabb(min_x: u32, min_y: u32, max_x: u32, max_y: u32) -> AABB;
 }
 
 impl AABBValues for UVec4 {
@@ -91,50 +93,57 @@ impl AABBValues for UVec4 {
     fn max(&self) -> UVec2 {
         self.zw()
     }
+    fn new_aabb(min_x: u32, min_y: u32, max_x: u32, max_y: u32) -> Self {
+        UVec4::new(min_x, min_y, max_x, max_y)
+    }
 }
 
-// For a given bounding box and cell, check if the cell intersects the bounding box
-fn intersects_cell(cell_aabb: &AABB, cell: UVec2) -> bool {
-    cell_aabb.min_x() <= cell.x + GRID_CELL_SIZE_U32
-        && cell_aabb.max_x() >= cell.x
-        && cell_aabb.min_y() <= cell.y + GRID_CELL_SIZE_U32
-        && cell_aabb.max_y() >= cell.y
+// For a given bounding box (raster space) and cell position (cell space)
+// check if the bounding box intersects the cell
+// All bounding box edges are considered to be inside the cell as any vertices
+// that lie on this edge could form triangles in the cell
+fn intersects_cell(aabb: &AABB, cell: UVec2) -> bool {
+    // Min and max (x,y) of the cell in raster space
+    let cell_ul = cell_to_raster_pixel(cell);
+    let cell_lr = cell_ul + GRID_CELL_SIZE_U32;
+
+    // Min and max (x,y) of the bounding box in raster space
+    let aabb_ul = aabb.min();
+    let aabb_lr = aabb.max();
+
+    // Check for any overlap between the cell's bounding box and aabb, including edges
+    cell_ul.x <= aabb_lr.x
+        && cell_lr.x >= aabb_ul.x
+        && cell_ul.y <= aabb_lr.y
+        && cell_lr.y >= aabb_ul.y
 }
 
-// pixel xy, in cell to raster x,y
-pub fn cell_pixel_x_y_to_raster_xy(cell_pixel_x: u32, cell_pixel_y: u32, cell: UVec2) -> UVec2 {
-    let pixel_x = cell.x * GRID_CELL_SIZE_U32 + cell_pixel_x;
-    let pixel_y = cell.y * GRID_CELL_SIZE_U32 + cell_pixel_y;
-    UVec2::new(pixel_x, pixel_y)
+// Various methods to convert between cell and raster pixel space
+// No bounds checking is performed
+
+pub fn cell_pixel_to_raster_pixel(cell_pixel: UVec2, cell: UVec2) -> UVec2 {
+    let cell_ul_raster_pixel = cell * GRID_CELL_SIZE_U32;
+    cell_ul_raster_pixel + cell_pixel
 }
 
-// pixel x,y to raster index
-pub fn raster_x_y_to_raster_index(cell_x: u32, cell_y: u32, params: &RasterParameters) -> usize {
-    ((cell_y * params.raster_dim_size) + cell_x) as usize
+pub fn cell_to_raster_pixel(cell: UVec2) -> UVec2 {
+    cell * GRID_CELL_SIZE_U32
 }
 
-// pixel x,y in celll to raster index
-pub fn cell_pixel_x_y_to_raster_index(
-    pixel_x: u32,
-    pixel_y: u32,
+pub fn raster_pixel_to_raster_index(pixel: UVec2, params: &RasterParameters) -> usize {
+    ((pixel.y * params.raster_dim_size) + pixel.x) as usize
+}
+
+pub fn cell_pixel_to_raster_index(
+    cell_pixel: UVec2,
     cell: UVec2,
     params: &RasterParameters,
 ) -> usize {
-    let pixel = cell_pixel_x_y_to_raster_xy(pixel_x, pixel_y, cell);
-    raster_x_y_to_raster_index(pixel.x, pixel.y, params)
+    raster_pixel_to_raster_index(cell_pixel_to_raster_pixel(cell_pixel, cell), params)
 }
 
-pub fn cell_pixel_to_raster_index(pixel: UVec2, cell: UVec2, params: &RasterParameters) -> usize {
-    cell_pixel_x_y_to_raster_index(pixel.x, pixel.y, cell, params)
-}
-
-// cell index to raster index (top left corner)
-// just a special case of pixel_x_y_to_index
-// where pixel index is 0,0
 pub fn cell_to_raster_index(cell: UVec2, params: &RasterParameters) -> usize {
-    let pixel_x = cell.x * GRID_CELL_SIZE_U32;
-    let pixel_y = cell.y * GRID_CELL_SIZE_U32;
-    raster_x_y_to_raster_index(pixel_x, pixel_y, params)
+    raster_pixel_to_raster_index(cell_to_raster_pixel(cell), params)
 }
 
 // Spir-v entry point for aabb calculation
@@ -178,11 +187,51 @@ pub fn compute_aabb(
     // Compute min_x and max_x manually
     // TODO: There is an issue with the glam uvec min/max function in spir-v
     // requiring i8 support - needs investigation
-    let min_x = if x0 < x1 { if x0 < x2 { x0 } else { x2 } } else if x1 < x2 { x1 } else { x2 };
-    let max_x = if x0 > x1 { if x0 > x2 { x0 } else { x2 } } else if x1 > x2 { x1 } else { x2 };
+    let min_x = if x0 < x1 {
+        if x0 < x2 {
+            x0
+        } else {
+            x2
+        }
+    } else if x1 < x2 {
+        x1
+    } else {
+        x2
+    };
+    let max_x = if x0 > x1 {
+        if x0 > x2 {
+            x0
+        } else {
+            x2
+        }
+    } else if x1 > x2 {
+        x1
+    } else {
+        x2
+    };
 
-    let min_y = if y0 < y1 { if y0 < y2 { y0 } else { y2 } } else if y1 < y2 { y1 } else { y2 };
-    let max_y = if y0 > y1 { if y0 > y2 { y0 } else { y2 } } else if y1 > y2 { y1 } else { y2 };
+    let min_y = if y0 < y1 {
+        if y0 < y2 {
+            y0
+        } else {
+            y2
+        }
+    } else if y1 < y2 {
+        y1
+    } else {
+        y2
+    };
+    let max_y = if y0 > y1 {
+        if y0 > y2 {
+            y0
+        } else {
+            y2
+        }
+    } else if y1 > y2 {
+        y1
+    } else {
+        y2
+    };
 
     UVec4::new(min_x, min_y, max_x, max_y)
 }
@@ -200,21 +249,26 @@ pub fn spirv_rasterise(
     #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] indices: &[u32],
     // aabb is mapped RW below simply to avoid the need to create a separate read only binding - it is not written to
     // TODO: Either disable this validation or map R/O
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] aabb: &mut [AABB], 
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] aabb: &mut [AABB],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 6)] storage: &mut [f32],
     #[spirv(workgroup)] cell_data: &mut CellData,
 ) {
-    // All threads load cell triangles
-    load_cell_triangles(
-        u_buffer,
-        v_buffer,
-        h_buffer,
-        indices,
-        aabb,
-        cell.xy(),
-        cell_data,
-        cell_thread,
-    );
+    // Discard the z component of the 3D workgroup & workgroup thread
+    let cell_pixel: UVec2 = cell_pixel.xy();
+    let cell: UVec2 = cell.xy();
+
+
+    if cell_thread == 0 {
+        load_cell_triangles(
+            u_buffer,
+            v_buffer,
+            h_buffer,
+            indices,
+            aabb,
+            cell,
+            cell_data,
+        );
+    }
 
     // Wait here until the vertices are loaded into shared memory
     unsafe {
@@ -224,13 +278,12 @@ pub fn spirv_rasterise(
     // rasterise the pixel and write to raster
     // the raster write is done here to allow the software rasteriser to use the same
     // code but handle parallelisation and safe access of shared memory
-    let raster_index =
-        cell_pixel_x_y_to_raster_index(cell_pixel.x, cell_pixel.y, cell.xy(), params);
+    let raster_index = cell_pixel_to_raster_index(cell_pixel, cell, params);
 
     // Will return an invalid value if the pixel is outside the cell
-    let val = rasterise_pixel(params, cell_data, cell.xy(), cell_pixel.xy());
-    if val > params.attribute_f_min {
-        storage[raster_index] = val;
+    let val = rasterise_cell_pixel(params, cell_data, cell, cell_pixel);
+    if val.is_some() {
+        storage[raster_index] = val.unwrap();
     }
 }
 
@@ -240,29 +293,30 @@ pub fn load_cell_triangles(
     v_buffer: &[u32],
     h_buffer: &[u32],
     indices: &[u32],
-    bounding_boxes: &[AABB],
+    aabb: &[AABB],
     cell: UVec2,
     cell_data: &mut CellData,
-    cell_thread: u32,
 ) {
 
-    let num_threads = GRID_CELL_THREADS;
+    // Pre-initialize cell_data with u32::MAX
+    for i in 0..MAX_CELL_TRIANGLES {
+        cell_data[i] = [
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+        ];
+    }
 
-    for i in (cell_thread as usize..bounding_boxes.len()).step_by(num_threads) {
-        if i >= MAX_CELL_TRIANGLES {
-            // Break if we have reached the maximum number of triangles
+    let mut cell_triangle_idx: usize = 0;
+
+    for i in 0..aabb.len() {
+        // If we have already loaded the maximum number of triangles for the cell, break
+        if cell_triangle_idx == MAX_CELL_TRIANGLES {
             break;
         }
-
-        let aabb = &bounding_boxes[i];
-        if intersects_cell(aabb, cell) {
-
+        if intersects_cell( &aabb[i], cell) {
             let idx = i * 3;
-            let triangle_indices = [
-                indices[idx],
-                indices[idx + 1],
-                indices[idx + 2],
-            ];
+            let triangle_indices = [indices[idx], indices[idx + 1], indices[idx + 2]];
             let v = [
                 UVec3::new(
                     u_buffer[triangle_indices[0] as usize],
@@ -280,19 +334,20 @@ pub fn load_cell_triangles(
                     h_buffer[triangle_indices[2] as usize],
                 ),
             ];
-            cell_data[i] = v;
-            //cell_data.triangle_count += 1;
+
+            cell_data[cell_triangle_idx] = v;
+            cell_triangle_idx += 1;
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn rasterise_pixel(
+pub fn rasterise_cell_pixel(
     raster_parameters: &RasterParameters,
     cell_data: &CellData,
     cell: UVec2,
-    pixel: UVec2,
-) -> f32 {
+    cell_pixel: UVec2,
+) -> Option<f32> {
     // Iterate over the shared memory to rasterise the pixel
     // There are likely less than MAX_CELL_TRIANGLES triangles in the shared memory
     // and we will break out of the loop once we find the triangle that contains the pixel
@@ -300,6 +355,12 @@ pub fn rasterise_pixel(
     #[allow(clippy::needless_range_loop)]
     for i in 0..MAX_CELL_TRIANGLES {
         let v = cell_data[i];
+
+        // cell_data is initialised with u32::MAX, so we can break as soon
+        // as we encounter it
+        if v[0].x == u32::MAX {
+            return None;
+        }
 
         let v_xy_i: [IVec2; 3] = [
             v[0].xy().as_ivec2(),
@@ -317,19 +378,23 @@ pub fn rasterise_pixel(
         // Negative area implies clockwise winding order
         let is_cw = area_full < 0;
 
-        // Check if the point is in the triangle
-        let p_raster_xy = cell_pixel_x_y_to_raster_xy(pixel.x, pixel.y, cell);
-        let w = calculate_edge_weights(v_xy_i, p_raster_xy.as_ivec2(), is_cw);
+        // Calculate position of the pixel in raster space
+        let raster_pixel = cell_pixel_to_raster_pixel(cell_pixel, cell);
 
+        // Calculate edge weights for the pixel. Winding order is used to ensure
+        // that a positive weight indicates the point is on the in side of the edge regardless
+        // of the sign of the triangle face normal
+        let w = calculate_edge_weights(v_xy_i, raster_pixel.as_ivec2(), is_cw);
+
+        // If all weights are positive, the point is inside the triangle
         if w[0] >= 0 && w[1] >= 0 && w[2] >= 0 {
-            let v_xyz_f: [Vec3; 3] = [v[0].as_vec3(), v[1].as_vec3(), v[2].as_vec3()];
-            let attribute =
-                interpolate_barycentric(v_xyz_f, p_raster_xy.as_vec2(), raster_parameters).unwrap();
-            return attribute;
+            // interpolation is performed in single-precision floating point
+            let v_xyz_f: [Vec3; 3] = [v[0].as_vec3(), v[1].as_vec3(), v[2].as_vec3()];                
+            return Some(interpolate_barycentric(v_xyz_f, raster_pixel.as_vec2(), raster_parameters))
         }
     }
     // If no triangle contains the pixel, return NAN
-    raster_parameters.attribute_f_min - 1.0
+    None
 }
 
 // Is v2 inside the edge formed by v0 and v1
@@ -399,7 +464,7 @@ pub fn calculate_barycentric_weights(v: [Vec2; 3], p: Vec2) -> [f32; 3] {
 }
 
 // Interpolate the attribute of a point p inside the triangle formed by vertices v
-pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters) -> Option<f32> {
+pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters) -> f32 {
     // RJ - error casting pointers spirv
     //let wb = calculate_barycentric_weights(v.map(|v| v.xy()), p);
     let v_xy: [Vec2; 3] = [v[0].xy(), v[1].xy(), v[2].xy()];
@@ -411,14 +476,16 @@ pub fn interpolate_barycentric(v: [Vec3; 3], p: Vec2, params: &RasterParameters)
     // Normalize and map the attribute. Unmapped range is 0..attribute_u_max
     // Mapped range is attribute_f_min..attribute_f_max
     let normalized_attribute = numerator / params.attribute_u_max as f32;
-    let mapped_attribute =
-        params.attribute_f_min + normalized_attribute * (params.attribute_f_max - params.attribute_f_min);
-    Some(mapped_attribute)
+    let mapped_attribute = params.attribute_f_min
+        + normalized_attribute * (params.attribute_f_max - params.attribute_f_min);
+    mapped_attribute
 }
 
 // These tests will be built and run for the host target only
 #[cfg(test)]
 mod tests {
+
+    use core::u32;
 
     use super::*;
     use approx::assert_abs_diff_eq;
@@ -686,8 +753,7 @@ mod tests {
         let params: RasterParameters = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.);
+        assert_eq!(result, 0.);
     }
 
     #[test]
@@ -698,16 +764,15 @@ mod tests {
             UVec3::new(0, 127, 32767),
             UVec3::new(127, 0, 32767),
         ];
-        let params: RasterParameters = RasterParameters::new(128, 0., 1.,32767, 0, 0);
+        let params: RasterParameters = RasterParameters::new(128, 0., 1., 32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_abs_diff_eq!(result.unwrap(), 1.0, epsilon = 1e-5);
+        assert_abs_diff_eq!(result, 1.0, epsilon = 1e-5);
     }
 
     #[test]
     fn test_shader_edge_interpolator_inside_triangle_different_z() {
-        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -717,13 +782,12 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_abs_diff_eq!(result.unwrap(), 0.5, epsilon = 1e-5);
+        assert_abs_diff_eq!(result, 0.5, epsilon = 1e-5);
     }
 
     #[test]
     fn test_shader_edge_interpolator_on_edge_different_z() {
-        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -733,28 +797,30 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_abs_diff_eq!(result.unwrap(), 0.75, epsilon = 1e-5);
+        assert_abs_diff_eq!(result, 0.75, epsilon = 1e-5);
     }
 
     #[test]
     fn test_shader_edge_interpolator_outside_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
-
-        let p = UVec2::new(3, 3);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        // this point is outside the triangle
+        // we actually calculate the interpolated value for the plane on
+        // which the triangle lies, so the result is still valid
+        let p = Vec2::new(3., 3.);
         let v = [
             UVec3::new(0, 0, 0),
             UVec3::new(2, 0, 32767),
             UVec3::new(0, 2, 32767),
-        ];
+        ]
+        .map(|v| v.as_vec3());
 
-        let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_none());
+        let result = interpolate_barycentric(v, p, &params);
+        assert!(result == 3.);
     }
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -764,13 +830,12 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.);
+        assert_eq!(result, 0.);
     }
 
     #[test]
     fn test_shader_edge_interpolator_on_edge() {
-        let params = RasterParameters::new(100, 0., 1.,32767, 0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 0);
         let v = [
@@ -780,13 +845,12 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.5);
+        assert_eq!(result, 0.5);
     }
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex() {
-        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -796,13 +860,12 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), 0.);
+        assert_eq!(result, 0.);
     }
 
     #[test]
     fn test_shader_edge_interpolator_degenerate_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 32767,0, 0);
+        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -812,6 +875,162 @@ mod tests {
         ];
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
+        assert!(result.is_nan());
+    }
+
+    #[test]
+    fn test_rasterise_pixel_inside_triangle() {
+        let params = RasterParameters::new(64, 0., 1000000., 32767, 3, 1);
+
+        let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
+        cell_data[0] = [
+            UVec3::new(0, 0, 0),
+            UVec3::new(63, 0, 32767),
+            UVec3::new(0, 63, 32767),
+        ];
+
+        // Top right corner of the raster, inside the triangle
+        let cell = UVec2::new(7, 0);
+        let pixel = UVec2::new(5, 1);
+
+        let result = rasterise_cell_pixel(&params, &cell_data, cell, pixel);
+        
+        assert!(result.is_some());
+        assert_abs_diff_eq!(result.unwrap(), 984127.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_rasterise_pixel_outside_triangle() {
+        let params = RasterParameters::new(64, 0., 1., 32767, 3, 1);
+
+        let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
+        cell_data[0] = [
+            UVec3::new(0, 0, 0),
+            UVec3::new(63, 0, 32767),
+            UVec3::new(0, 63, 32767),
+        ];
+
+        // bottom right corner of the raster, outside the triangle
+        let cell = UVec2::new(7, 7);
+        let pixel = UVec2::new(7, 7);
+
+        let result = rasterise_cell_pixel(&params, &cell_data, cell, pixel);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_rasterise_pixel_on_edge() {
+        let params = RasterParameters::new(64, 0., 1000000., 32767, 3, 1);
+
+        let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
+        cell_data[0] = [
+            UVec3::new(0, 0, 0),
+            UVec3::new(63, 0, 32767),
+            UVec3::new(0, 63, 32767),
+        ];
+
+        // Top right corner of the raster, corner of triangle
+        let cell = UVec2::new(7, 0);
+        let pixel = UVec2::new(7, 0);
+
+        let result = rasterise_cell_pixel(&params, &cell_data, cell, pixel);
+        assert!(result.is_some());
+        let res_val = result.unwrap();
+        assert!(res_val.is_finite());
+        assert_abs_diff_eq!(res_val, 1000000.0, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn test_load_cell_triangles_with_triangles() {
+        let u_buffer = vec![0, 2, 0];
+        let v_buffer = vec![0, 0, 2];
+        let h_buffer = vec![0, 32767, 32767];
+        let indices = vec![0, 1, 2, 0, 1, 2]; //two copies of same triangle
+        let bounding_boxes = vec![UVec4::new(0, 0, 2, 2), UVec4::new(0, 0, 2, 2)];
+        let cell = UVec2::new(0, 0);
+        let mut cell_data: CellData =
+            [[UVec3::new(u32::MAX, u32::MAX, u32::MAX); 3]; MAX_CELL_TRIANGLES];
+
+        assert_eq!(bounding_boxes.len(), 2);
+
+        // two bounding boxes, one for thread one. one for thread two.
+        // call twice, and cell_data should be filled with 2x the same triangle
+
+        load_cell_triangles(
+            &u_buffer,
+            &v_buffer,
+            &h_buffer,
+            &indices,
+            &bounding_boxes,
+            cell,
+            &mut cell_data,
+        );
+
+        let expected_cell_data = [
+            UVec3::new(0, 0, 0),
+            UVec3::new(2, 0, 32767),
+            UVec3::new(0, 2, 32767),
+        ];
+
+        assert_eq!(cell_data[0], expected_cell_data);
+        assert_eq!(cell_data[1], expected_cell_data);
+    }
+
+    #[test]
+    fn test_load_cell_triangles_with_triangles_not_covering_cell() {
+        let u_buffer = vec![0, 2, 0];
+        let v_buffer = vec![0, 0, 2];
+        let h_buffer = vec![0, 32767, 32767];
+        let indices = vec![0, 1, 2];
+        let bounding_boxes = vec![UVec4::new(0, 0, 2, 2)];
+        let cell = UVec2::new(7, 7);
+        let mut cell_data: CellData =
+            [[UVec3::new(u32::MAX, u32::MAX, u32::MAX); 3]; MAX_CELL_TRIANGLES];
+
+        load_cell_triangles(
+            &u_buffer,
+            &v_buffer,
+            &h_buffer,
+            &indices,
+            &bounding_boxes,
+            cell,
+            &mut cell_data,
+        );
+
+        let expected_cell_data = [[
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+            UVec3::new(u32::MAX, u32::MAX, u32::MAX),
+        ]];
+
+        assert_eq!(cell_data[0], expected_cell_data[0]);
+    }
+
+    #[test]
+    fn test_intersects_cell() {
+        // 8,8 is the top left corner of the cell 1,1
+        let aabb = AABB::new_aabb(8, 8, 16, 16);
+        assert!(intersects_cell(&aabb, UVec2::new(1, 1)));
+
+        // 15,1 is the bottom right corner of the cell 1,1
+        let aabb = AABB::new_aabb(15, 15, 16, 16);
+        assert!(intersects_cell(&aabb, UVec2::new(1, 1)));
+
+        //For aabb 7,7:15,15
+        // 0,0, 0,1, 1,0, 1,1 all intersect
+        // 0,2, 2,0, 2,2 do not intersect
+        let aabb = AABB::new_aabb(7, 7, 15, 15);
+        assert!(intersects_cell(&aabb, UVec2::new(0, 0)));
+        assert!(intersects_cell(&aabb, UVec2::new(0, 1)));
+        assert!(intersects_cell(&aabb, UVec2::new(1, 0)));
+        assert!(intersects_cell(&aabb, UVec2::new(1, 1)));
+
+        assert!(!intersects_cell(&aabb, UVec2::new(0, 2)));
+        assert!(!intersects_cell(&aabb, UVec2::new(2, 0)));
+        assert!(!intersects_cell(&aabb, UVec2::new(2, 2)));
+
+        // 1,1 is entirely inside
+        let aabb = AABB::new_aabb(0, 0, 31, 31);
+        assert!(intersects_cell(&aabb, UVec2::new(1, 1)));
     }
 }

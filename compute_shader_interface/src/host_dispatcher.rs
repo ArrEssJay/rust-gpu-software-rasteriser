@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::VertexBuffers;
 use compute_shader::{
-    cell_pixel_to_raster_index, compute_aabb, load_cell_triangles, rasterise_pixel, CellData,
+    cell_pixel_to_raster_index, compute_aabb, load_cell_triangles, rasterise_cell_pixel, CellData,
     RasterParameters, AABB, GRID_CELL_SIZE_U32, MAX_CELL_TRIANGLES,
 };
 use std::cell::SyncUnsafeCell;
@@ -16,15 +16,14 @@ use std::cell::SyncUnsafeCell;
 /// Within each cell, pixels are processed serially.
 pub fn execute_compute_shader_host(
     vertex_buffers: VertexBuffers,
-    params: &RasterParameters,
+    raster_parameters: &RasterParameters,
 ) -> Vec<f32> {
-    let raster_size = (params.raster_dim_size * params.raster_dim_size) as usize;
-    let unsafe_raster: SyncUnsafeCell<Vec<f32>> = vec![-1.0f32; raster_size].into();
-
-    let cell_count = params.raster_dim_size / GRID_CELL_SIZE_U32;
+    let raster_size = (raster_parameters.raster_dim_size * raster_parameters.raster_dim_size) as usize;
+    let unsafe_raster: SyncUnsafeCell<Vec<f32>> = vec![f32::NAN; raster_size].into();
+    let cell_count = raster_parameters.raster_dim_size / GRID_CELL_SIZE_U32;
 
     // Calculate bounding-boxes for each triangle
-    let aabb: Vec<AABB> = (0..params.triangle_count as usize)
+    let aabb: Vec<AABB> = (0..raster_parameters.triangle_count as usize)
         .map(|i| {
             compute_aabb(
                 i,
@@ -41,7 +40,11 @@ pub fn execute_compute_shader_host(
             let mut cell_data: CellData = [[UVec3::ZERO; 3]; MAX_CELL_TRIANGLES];
 
             let cell = UVec2::new(cell_x, cell_y);
+            
             // Load cell vertices (populate shared_indices)
+            // Unlike the GPU implementation, we don't need to worry about
+            // which thread in the warp is executing this code. we process all
+            // pixels in the cell serially in one thread
             load_cell_triangles(
                 vertex_buffers.u,
                 vertex_buffers.v,
@@ -50,21 +53,21 @@ pub fn execute_compute_shader_host(
                 aabb.as_slice(),
                 cell,
                 &mut cell_data,
-                cell_y * GRID_CELL_SIZE_U32 + cell_x,
             );
 
             // Iterate over each pixel within the 8x8 cell
             for yp in 0..GRID_CELL_SIZE_U32 {
                 for xp in 0..GRID_CELL_SIZE_U32 {
                     // Compute local pixel position within the cell
-                    let pixel = UVec2::new(xp, yp);
+                    let cell_pixel = UVec2::new(xp, yp);
 
                     // Compute pixel value and store in raster
-                    let raster_index = cell_pixel_to_raster_index(cell, pixel, params);
+                    let raster_index = cell_pixel_to_raster_index(cell_pixel, cell, raster_parameters);
 
                     // will return an out of bounds value if pixel is outside cell
-                    let val = rasterise_pixel(params, &cell_data, cell, pixel);
-                    if val > params.attribute_f_min {
+                    let val = rasterise_cell_pixel(raster_parameters, &cell_data, cell, cell_pixel);
+                    
+                    if val.is_some() {
                         // SAFETY: multiple concurrent references to the raster are safe
                         // only if no writes to the same address are made concurrently.
                         // The code as-written assigns unique albeit non-contiguous ranges 
@@ -73,13 +76,55 @@ pub fn execute_compute_shader_host(
                         // If this behaviour is changed, the safety of this code MUST be re-evaluated
                         unsafe {
                             let raster_ref = &mut *unsafe_raster.get();
-                            raster_ref[raster_index] = val;
+                            raster_ref[raster_index] = val.unwrap();
                         }
                     }
+                    
                 }
             }
         }
     });
 
     unsafe_raster.into_inner()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_compute_shader_host() {
+
+        let dim_size = 64;
+        let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
+
+        let u: Vec<u32> = vec![0, 63, 0, 63];
+        let v: Vec<u32> = vec![0, 0, 63, 63];
+
+        let attribute: Vec<u32> =
+            vec![32767, 32767, 32767, 32767];
+
+        let vertex_buffers = VertexBuffers {
+            u: &u,
+            v: &v,
+            attribute: &attribute,
+            indices: &indices
+        };
+
+        let params = RasterParameters {
+            raster_dim_size: dim_size,
+            attribute_f_min: 0.0,
+            attribute_f_max: 100.0,
+            attribute_u_max: 32767,
+            vertex_count: u.len() as u32,
+            triangle_count: (indices.len() / 3) as u32,
+        };
+
+
+        // Just check that we get a sane result here
+        let result = execute_compute_shader_host(vertex_buffers, &params);
+        assert_eq!(result.len(), (params.raster_dim_size * params.raster_dim_size) as usize);
+        assert!(result.iter().all(|&val| val.is_finite()));
+    }
+
 }

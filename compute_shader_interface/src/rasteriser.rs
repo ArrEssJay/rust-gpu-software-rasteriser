@@ -172,8 +172,6 @@ mod tests {
         };
 
         let result = rasterise(vertex_buffers, &params, rasteriser);
-
-        // Compare to the reference value(s)
         if gradient {
             let expected_output_row = generate_expected_gradient(dim_size as usize);
             for row in 0..params.raster_dim_size {
