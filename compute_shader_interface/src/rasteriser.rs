@@ -29,52 +29,84 @@ pub fn rasterise(
     params: &RasterParameters,
     rasteriser: Rasteriser,
 ) -> Vec<f32> {
-    if rasteriser == Rasteriser::CPU {
-        execute_compute_shader_host(vertex_buffers, params)
-    } else {
-        async_std::task::block_on(async {
-            let mut dispatcher =
-                WgpuDispatcher::setup_compute_shader_wgpu(vertex_buffers, params).await;
-            dispatcher.execute_compute_shader_wgpu().await
-        })
+
+    {
+        let scaled_u_vec: Vec<u32> = vertex_buffers
+            .u
+            .iter()
+            .map(|&value| value >> params.raster_scale_factor)
+            .collect();
+        let scaled_v_vec: Vec<u32> = vertex_buffers
+            .v
+            .iter()
+            .map(|&value| value >> params.raster_scale_factor)
+            .collect();
+        let scaled_vertex_buffers = VertexBuffers {
+            u: &scaled_u_vec,
+            v: &scaled_v_vec,
+            attribute: vertex_buffers.attribute,
+            indices: vertex_buffers.indices,
+        };
+    
+        for i in 0..params.triangle_count as usize{
+            println!("====={:?} i: {:?} {:?} {:?}", i, vertex_buffers.indices[i*3], vertex_buffers.indices[i*3+1], vertex_buffers.indices[i*3+2]);
+            
+            
+            println!("{:?} u: {:?} v: {:?} h: {:?}", vertex_buffers.indices[i*3], scaled_u_vec[vertex_buffers.indices[i*3] as usize], scaled_v_vec[vertex_buffers.indices[i*3] as usize], vertex_buffers.attribute[vertex_buffers.indices[i*3] as usize]);
+            println!("{:?} u: {:?} v: {:?} h: {:?}", vertex_buffers.indices[i*3+1], scaled_u_vec[vertex_buffers.indices[i*3+1] as usize], scaled_v_vec[vertex_buffers.indices[i*3+1] as usize], vertex_buffers.attribute[vertex_buffers.indices[i*3+1] as usize]);
+            println!("{:?} u: {:?} v: {:?} h: {:?}", vertex_buffers.indices[i*3+2], scaled_u_vec[vertex_buffers.indices[i*3+2] as usize], scaled_v_vec[vertex_buffers.indices[i*3+2] as usize], vertex_buffers.attribute[vertex_buffers.indices[i*3+2] as usize]);
+
+        
+        }
+        if rasteriser == Rasteriser::CPU {
+            execute_compute_shader_host(scaled_vertex_buffers, params)
+        } else {
+            async_std::task::block_on(async {
+                let mut dispatcher =
+                    WgpuDispatcher::setup_compute_shader_wgpu(scaled_vertex_buffers, params).await;
+                dispatcher.execute_compute_shader_wgpu().await
+            })
+        }
     }
+    
+   
 }
 
-pub fn generate_triangle_bounding_boxes(
-    vertex_buffers: VertexBuffers,
-    params: &RasterParameters,
-) -> Vec<UVec4> {
-    let mut bounding_boxes: Vec<UVec4> = Vec::new();
+// pub fn generate_triangle_bounding_boxes(
+//     vertex_buffers: VertexBuffers,
+//     params: &RasterParameters,
+// ) -> Vec<UVec4> {
+//     let mut bounding_boxes: Vec<UVec4> = Vec::new();
 
-    for i in 0..params.triangle_count as usize {
-        let v0 = i * 3;
-        let vertex_indices: [usize; 3] = [
-            vertex_buffers.indices[v0] as usize,
-            vertex_buffers.indices[v0 + 1] as usize,
-            vertex_buffers.indices[v0 + 2] as usize,
-        ];
+//     for i in 0..params.triangle_count as usize {
+//         let v0 = i * 3;
+//         let vertex_indices: [usize; 3] = [
+//             vertex_buffers.indices[v0] as usize,
+//             vertex_buffers.indices[v0 + 1] as usize,
+//             vertex_buffers.indices[v0 + 2] as usize,
+//         ];
 
-        let vertices = [
-            UVec2::new(
-                vertex_buffers.u[vertex_indices[0]],
-                vertex_buffers.v[vertex_indices[0]],
-            ),
-            UVec2::new(
-                vertex_buffers.u[vertex_indices[1]],
-                vertex_buffers.v[vertex_indices[1]],
-            ),
-            UVec2::new(
-                vertex_buffers.u[vertex_indices[2]],
-                vertex_buffers.v[vertex_indices[2]],
-            ),
-        ];
+//         let vertices = [
+//             UVec2::new(
+//                 vertex_buffers.u[vertex_indices[0]],
+//                 vertex_buffers.v[vertex_indices[0]],
+//             ),
+//             UVec2::new(
+//                 vertex_buffers.u[vertex_indices[1]],
+//                 vertex_buffers.v[vertex_indices[1]],
+//             ),
+//             UVec2::new(
+//                 vertex_buffers.u[vertex_indices[2]],
+//                 vertex_buffers.v[vertex_indices[2]],
+//             ),
+//         ];
 
-        let aabb: UVec4 = calculate_triangle_aabb(&vertices);
-        bounding_boxes.push(aabb);
-    }
+//         let aabb: UVec4 = calculate_triangle_aabb(&vertices);
+//         bounding_boxes.push(aabb);
+//     }
 
-    bounding_boxes
-}
+//     bounding_boxes
+// }
 
 // takes 3 x,y vertices and returns the axis aligned bounding box
 pub fn calculate_triangle_aabb(v: &[UVec2]) -> UVec4 {
@@ -83,6 +115,8 @@ pub fn calculate_triangle_aabb(v: &[UVec2]) -> UVec4 {
 
     UVec4::new(min.x, min.y, max.x, max.y)
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -135,7 +169,7 @@ mod tests {
     }
 
     fn test_plane(
-        dim_size: u32,
+        raster_scale_factor: u32,
         height: f32,
         rasteriser: Rasteriser,
         epsilon: f32,
@@ -143,16 +177,20 @@ mod tests {
     ) {
         // Simple pair of triangles forming a plane
         // Either flat at the max height or sloping from 0 along the x-axis
-        let max = dim_size - 1;
+        let raster_dim_max = 32767;
+        let attr_max = 32767;
+
+        
+
         let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
 
-        let u: Vec<u32> = vec![0, max, 0, max];
-        let v: Vec<u32> = vec![0, 0, max, max];
+        let u: Vec<u32> = vec![0, raster_dim_max, 0, raster_dim_max];
+        let v: Vec<u32> = vec![0, 0, raster_dim_max, raster_dim_max];
 
         let attribute: Vec<u32> = if gradient {
-            vec![0, 32767, 0, 32767]
+            vec![0, attr_max, 0, attr_max]
         } else {
-            vec![32767, 32767, 32767, 32767]
+            vec![attr_max, attr_max, attr_max, attr_max]
         };
 
         let vertex_buffers = VertexBuffers {
@@ -161,23 +199,29 @@ mod tests {
             attribute: &attribute,
             indices: &indices,
         };
+        
+        let params = RasterParameters::new(
+            raster_scale_factor,
+            raster_dim_max,
+            0.0,
+            height,
+            attr_max,
+            u.len() as u32,
+            (indices.len() / 3) as u32,
+        );
 
-        let params = RasterParameters {
-            raster_dim_size: dim_size,
-            attribute_f_min: 0.0,
-            attribute_f_max: height,
-            attribute_u_max: 32767,
-            vertex_count: u.len() as u32,
-            triangle_count: (indices.len() / 3) as u32,
-        };
+        
 
         let result = rasterise(vertex_buffers, &params, rasteriser);
         if gradient {
-            let expected_output_row = generate_expected_gradient(dim_size as usize);
-            for row in 0..params.raster_dim_size {
-                let start = (row * params.raster_dim_size) as usize;
-                let end = start + params.raster_dim_size as usize;
+            let expected_output_row = generate_expected_gradient(params.scaled_raster_size() as usize);
+            for row in 0..params.scaled_raster_size() {
+                let start = (row * params.scaled_raster_size()) as usize;
+                let end = start + params.scaled_raster_size() as usize;
                 let actual_row = &result[start..end];
+                println!("== Row: {} Start: {} End: {}", row, start, end);
+                println!("actual_row: {:?}", actual_row);
+
                 assert_abs_diff_eq!(
                     actual_row,
                     expected_output_row.as_slice(),
@@ -193,70 +237,84 @@ mod tests {
 
     #[test]
     fn test_plane_flat_64_cpu() {
-        test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, false);
+        test_plane(9, 100.0, Rasteriser::CPU, F32_EPSILON, false);
     }
 
     #[test]
     fn test_plane_flat_64_gpu() {
-        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, false);
+        test_plane(9, 100.0, Rasteriser::GPU, F32_EPSILON, false);
     }
 
     #[test]
     fn test_plane_gradient_64_cpu() {
-        test_plane(64, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(9, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
     #[test]
     fn test_plane_gradient_64_gpu() {
-        test_plane(64, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(9, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+    }
+    #[test]
+    fn test_plane_gradient_128_cpu() {
+        test_plane(8, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_256_cpu() {
+        test_plane(7, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+    }
+
+    #[test]
+    fn test_plane_gradient_512_cpu() {
+        test_plane(6, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_1024_cpu() {
-        test_plane(1024, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(5, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_1024_gpu() {
-        test_plane(1024, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(5, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_4096_cpu() {
-        test_plane(4096, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(3, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_4096_gpu() {
-        test_plane(4096, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(3, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_8192_cpu() {
-        test_plane(8192, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(81292, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_8192_gpu() {
-        test_plane(8192, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(2, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_16384_cpu() {
-        test_plane(16384, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(1, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_16384_gpu() {
-        test_plane(16384, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(1, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_32768_cpu() {
-        test_plane(32768, 100.0, Rasteriser::CPU, F32_EPSILON, true);
+        test_plane(0, 100.0, Rasteriser::CPU, F32_EPSILON, true);
     }
 
     #[test]
     fn test_plane_gradient_32768_gpu() {
-        test_plane(32768, 100.0, Rasteriser::GPU, F32_EPSILON, true);
+        test_plane(0, 100.0, Rasteriser::GPU, F32_EPSILON, true);
     }
 }

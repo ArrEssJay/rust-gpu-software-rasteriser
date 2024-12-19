@@ -1,28 +1,30 @@
 use std::sync::Arc;
 
-use compute_shader::RasterParameters;
-use compute_shader_interface::{
-    rasterise, wgpu_dispatcher, Rasteriser, VertexBuffers,
-};
-use wgpu_dispatcher::WgpuDispatcher;
-use async_std::{sync::Mutex, task::block_on};
 use async_std::task;
+use async_std::{sync::Mutex, task::block_on};
+use compute_shader::RasterParameters;
+use compute_shader_interface::{rasterise, wgpu_dispatcher, Rasteriser, VertexBuffers};
+use wgpu_dispatcher::WgpuDispatcher;
 
 use criterion::{
-    criterion_group, criterion_main, BenchmarkId, Criterion,
-    async_executor::AsyncStdExecutor,
+    async_executor::AsyncStdExecutor, criterion_group, criterion_main, BenchmarkId, Criterion,
 };
+
 async fn benchmark_rasteriser(c: &mut Criterion) {
-    let dim_sizes = [64, 128, 256, 512, 1024, 2048, 4096];
+    // Define raster_scale_factor values corresponding to raster dimensions
+    let raster_scale_factors = [9, 8, 7, 6, 5, 4, 3]; // For raster_dim_size from 64 to 4096
     let mut group = c.benchmark_group("Shader Rasteriser");
     group.sample_size(10); // Set the sample size to 10
 
-    for &dim_size in &dim_sizes {
+    for &raster_scale_factor in &raster_scale_factors {
+        let raster_dim_size = 32768_u32 >> raster_scale_factor;
+        let raster_dim_size_u32 = raster_dim_size as u32;
+        let max_u_v = 32767_u32;
+
         // Pair of triangles forming a linear slope
-        let max = dim_size - 1;
         let indices: Vec<u32> = vec![0, 1, 2, 1, 2, 3];
-        let u: Vec<u32> = vec![0, max, 0, max];
-        let v: Vec<u32> = vec![0, 0, max, max];
+        let u: Vec<u32> = vec![0, max_u_v, 0, max_u_v];
+        let v: Vec<u32> = vec![0, 0, max_u_v, max_u_v];
         let attribute: Vec<u32> = vec![0, 32767, 0, 32767];
 
         let vertex_buffers = VertexBuffers {
@@ -32,22 +34,22 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
             indices: &indices,
         };
 
-        let params = RasterParameters {
-            raster_dim_size: dim_size,
-            attribute_f_min: 0.0,
-            attribute_f_max: 100.0,
-            attribute_u_max: 32767,
-            vertex_count: u.len() as u32,
-            triangle_count: (indices.len() / 3) as u32,
-        };
+        let params = RasterParameters::new(
+            raster_scale_factor,
+            32767,
+            0.0,
+            100.0,
+            32767,
+            u.len() as u32,
+            (indices.len() / 3) as u32,
+        );
 
-        let data_size = dim_size * dim_size;
+        let data_size = raster_dim_size * raster_dim_size;
 
         // Benchmark CPU rasterization
-        // there is no need to benchmark the setup of the CPU rasteriser
         group.bench_with_input(
             BenchmarkId::new("CPU", data_size),
-            &dim_size,
+            &raster_dim_size_u32,
             |b, _dim_size| {
                 b.iter(|| {
                     let _result = rasterise(vertex_buffers, &params, Rasteriser::CPU);
@@ -55,21 +57,17 @@ async fn benchmark_rasteriser(c: &mut Criterion) {
             },
         );
 
-
         // Benchmark GPU rasterization
-        // We have to stuff around with mutex/ARC to do multiple benchmarks without tearing down the dispatcher
-        // 
-        // Setup GPU dispatcher outside of the execution benchmark
-        let wgpu_dispatcher = task::block_on(
-            WgpuDispatcher::setup_compute_shader_wgpu(vertex_buffers, &params)
-        );
+        let wgpu_dispatcher = task::block_on(WgpuDispatcher::setup_compute_shader_wgpu(
+            vertex_buffers,
+            &params,
+        ));
         let wgpu_dispatcher = Arc::new(Mutex::new(wgpu_dispatcher));
 
-        // Benchmark GPU execution
         let dispatcher_clone = Arc::clone(&wgpu_dispatcher);
         group.bench_with_input(
             BenchmarkId::new("GPU", data_size),
-            &dim_size,
+            &raster_dim_size_u32,
             |b, &_dim_size| {
                 b.to_async(AsyncStdExecutor).iter(|| {
                     let dispatcher = Arc::clone(&dispatcher_clone);

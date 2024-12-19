@@ -134,7 +134,7 @@ impl<'a> WgpuDispatcher<'a> {
      drop(adapter);
  
      // Raster buffer
-     let output_raster_size_bytes = (raster_parameters.raster_dim_size as u64 * raster_parameters.raster_dim_size as u64)
+     let output_raster_size_bytes = (raster_parameters.scaled_raster_size() as u64 * raster_parameters.scaled_raster_size() as u64)
          * std::mem::size_of::<f32>() as u64;
      
      println!("Required storage buffer size: {} bytes", output_raster_size_bytes);
@@ -362,7 +362,7 @@ impl<'a> WgpuDispatcher<'a> {
 
 
     // Calculate the number of workgroups needed - symmetric about x and y
-    let num_workgroups_x_y = raster_parameters.raster_dim_size / GRID_CELL_SIZE_U32;
+    let num_workgroups_x_y = raster_parameters.scaled_raster_size() / GRID_CELL_SIZE_U32;
 
     // Unlikely to be an issue but check the number of workgroups is within device limits
     if num_workgroups_x_y > custom_limits.max_compute_workgroups_per_dimension {
