@@ -18,7 +18,7 @@ pub const GRID_CELL_SIZE: usize = 8;
 pub const GRID_CELL_THREADS: usize = GRID_CELL_SIZE * GRID_CELL_SIZE;
 
 // Shared memory for per-cell vertices
-pub const MAX_CELL_TRIANGLES: usize = 8;
+pub const MAX_CELL_TRIANGLES: usize = 32;
 pub type CellData = [[UVec3; 3]; MAX_CELL_TRIANGLES];
 
 #[repr(C)]
