@@ -408,7 +408,7 @@ pub fn calculate_edge_weights(v: [IVec2; 3], p: IVec2, is_cw: bool) -> [i32; 3] 
         [
             edge_function([v[1], v[0], p]),
             edge_function([v[2], v[1], p]),
-            edge_function([v[1], v[0], p]),
+            edge_function([v[0], v[2], p]),
         ]
     } else {
         [
