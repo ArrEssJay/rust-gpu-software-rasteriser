@@ -24,7 +24,9 @@ pub type CellData = [[UVec3; 3]; MAX_CELL_TRIANGLES];
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct RasterParameters {
-    pub raster_dim_size: u32,
+    scaled_raster_size: u32,
+    pub raster_scale_factor: u32,
+    pub raster_native_max: u32,
     pub attribute_f_min: f32,
     pub attribute_f_max: f32,
     pub attribute_u_max: u32,
@@ -34,15 +36,23 @@ pub struct RasterParameters {
 
 impl RasterParameters {
     pub fn new(
-        raster_dim_size: u32,
+        raster_scale_factor: u32,
+        raster_native_max: u32,
         attribute_f_min: f32,
         attribute_f_max: f32,
         attribute_u_max: u32,
         vertex_count: u32,
         triangle_count: u32,
     ) -> Self {
+        let scaled_raster_size = Self::_scaled_raster_size(raster_scale_factor, raster_native_max);
+        if (scaled_raster_size % GRID_CELL_SIZE_U32) != 0 {
+            panic!("Scaled raster size: {} % {} = {} (!=0)", scaled_raster_size, GRID_CELL_SIZE_U32, scaled_raster_size % GRID_CELL_SIZE_U32);
+        }
+
         Self {
-            raster_dim_size,
+            scaled_raster_size,
+            raster_scale_factor,
+            raster_native_max,
             attribute_f_min,
             attribute_f_max,
             attribute_u_max,
@@ -50,7 +60,14 @@ impl RasterParameters {
             triangle_count,
         }
     }
+    fn _scaled_raster_size(raster_scale_factor: u32, raster_native_max: u32) -> u32 {
+        (raster_native_max + 1) >> raster_scale_factor
+    }
+    pub fn scaled_raster_size(&self) -> u32 {
+        self.scaled_raster_size
+    }
 }
+
 
 // The spir-v compiler is very picky about how we extend/wrap
 // types in external crates. traits on a type alias is the only way
@@ -131,7 +148,9 @@ pub fn cell_to_raster_pixel(cell: UVec2) -> UVec2 {
 }
 
 pub fn raster_pixel_to_raster_index(pixel: UVec2, params: &RasterParameters) -> usize {
-    ((pixel.y * params.raster_dim_size) + pixel.x) as usize
+    // reverse scan line order in raster space
+    let adjusted_y = params.scaled_raster_size() - 1 - pixel.y;
+    ((adjusted_y * params.scaled_raster_size()) + pixel.x) as usize
 }
 
 pub fn cell_pixel_to_raster_index(
@@ -357,7 +376,7 @@ pub fn rasterise_cell_pixel(
         let v = cell_data[i];
 
         // cell_data is initialised with u32::MAX, so we can break as soon
-        // as we encounter it
+        // as we encounter it 
         if v[0].x == u32::MAX {
             return None;
         }
@@ -750,7 +769,7 @@ mod tests {
             UVec3::new(0, 3, 0),
             UVec3::new(3, 0, 0),
         ];
-        let params: RasterParameters = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params: RasterParameters = RasterParameters::new(8, 32767, 0., 1., 32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert_eq!(result, 0.);
@@ -764,7 +783,7 @@ mod tests {
             UVec3::new(0, 127, 32767),
             UVec3::new(127, 0, 32767),
         ];
-        let params: RasterParameters = RasterParameters::new(128, 0., 1., 32767, 0, 0);
+        let params: RasterParameters = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let result = interpolate_barycentric(v.map(|v| v.as_vec3()), p.as_vec2(), &params);
         assert_abs_diff_eq!(result, 1.0, epsilon = 1e-5);
@@ -772,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_inside_triangle_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8, 32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -787,7 +806,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_on_edge_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -802,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_outside_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
         // this point is outside the triangle
         // we actually calculate the interpolated value for the plane on
         // which the triangle lies, so the result is still valid
@@ -820,7 +839,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex_different_z() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -835,7 +854,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_on_edge() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 0);
         let v = [
@@ -850,7 +869,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_at_vertex() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(0, 0);
         let v = [
@@ -865,7 +884,7 @@ mod tests {
 
     #[test]
     fn test_shader_edge_interpolator_degenerate_triangle() {
-        let params = RasterParameters::new(100, 0., 1., 32767, 0, 0);
+        let params = RasterParameters::new(8,32767, 0., 1., 32767, 0, 0);
 
         let p = UVec2::new(1, 1);
         let v = [
@@ -880,7 +899,7 @@ mod tests {
 
     #[test]
     fn test_rasterise_pixel_inside_triangle() {
-        let params = RasterParameters::new(64, 0., 1000000., 32767, 3, 1);
+        let params = RasterParameters::new(9, 32767, 0., 1000000., 32767, 3, 1);
 
         let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
         cell_data[0] = [
@@ -901,7 +920,7 @@ mod tests {
 
     #[test]
     fn test_rasterise_pixel_outside_triangle() {
-        let params = RasterParameters::new(64, 0., 1., 32767, 3, 1);
+        let params = RasterParameters::new(9,32767, 0., 1., 32767, 3, 1);
 
         let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
         cell_data[0] = [
@@ -920,7 +939,7 @@ mod tests {
 
     #[test]
     fn test_rasterise_pixel_on_edge() {
-        let params = RasterParameters::new(64, 0., 1000000., 32767, 3, 1);
+        let params = RasterParameters::new(9,32767, 0., 1000000., 32767, 3, 1);
 
         let mut cell_data: CellData = [[UVec3::new(0, 0, 0); 3]; MAX_CELL_TRIANGLES];
         cell_data[0] = [
@@ -1033,4 +1052,46 @@ mod tests {
         let aabb = AABB::new_aabb(0, 0, 31, 31);
         assert!(intersects_cell(&aabb, UVec2::new(1, 1)));
     }
+
+    #[test]
+    fn test_cell_pixel_to_raster_pixel() {
+        let cell = UVec2::new(2, 3);
+        let cell_pixel = UVec2::new(4, 5);
+        let expected = UVec2::new(2*GRID_CELL_SIZE_U32 +4, 3*GRID_CELL_SIZE_U32+5);
+        let result = cell_pixel_to_raster_pixel(cell_pixel, cell);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_cell_to_raster_pixel() {
+        let cell = UVec2::new(2, 3);
+        let expected = UVec2::new(2*GRID_CELL_SIZE_U32, 3*GRID_CELL_SIZE_U32);
+        let result = cell_to_raster_pixel(cell);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_raster_pixel_to_raster_index() {
+        let pixel = UVec2::new(1954, 2045);
+        let params = RasterParameters::new(3, 32767, 0.0, 100.0, 32767, 0, 0);
+        
+        //reverse y axis
+        let adjusted_y = params.scaled_raster_size() - 1 - pixel.y;
+
+        let expected = (adjusted_y * params.scaled_raster_size() + 1954) as usize;
+        let result = raster_pixel_to_raster_index(pixel, &params);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_cell_to_raster_index() {
+        let cell = UVec2::new(2, 3);
+        let params = RasterParameters::new(3, 32767, 0.0, 100.0, 32767, 0, 0);
+        let raster_pixel = cell_to_raster_pixel(cell);
+        let expected = raster_pixel_to_raster_index(raster_pixel, &params);
+        let result = cell_to_raster_index(cell, &params);
+        assert_eq!(result, expected);
+    }
+
+
 }
